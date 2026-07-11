@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
-            build-essential git zip curl
+            build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Get Proton Clang
         run: |
