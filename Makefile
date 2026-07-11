@@ -891,6 +891,9 @@ KBUILD_CFLAGS += $(call cc-disable-warning, pointer-sign)
 # disable stringop warnings in gcc 8+
 KBUILD_CFLAGS += $(call cc-disable-warning, stringop-truncation)
 
+# disable void-pointer-to-enum-cast warnings in clang
+KBUILD_CFLAGS += $(call cc-disable-warning, void-pointer-to-enum-cast)
+
 # disable invalid "can't wrap" optimizations for signed / pointers
 KBUILD_CFLAGS	+= $(call cc-option,-fno-strict-overflow)
 
