@@ -104,7 +104,11 @@
 #define  noinline	__attribute__((noinline))
 
 #define __deprecated	__attribute__((deprecated))
+#ifdef __GENKSYMS__
+#define __packed
+#else
 #define __packed	__attribute__((packed))
+#endif
 #define __weak		__attribute__((weak))
 #define __alias(symbol)	__attribute__((alias(#symbol)))
 
