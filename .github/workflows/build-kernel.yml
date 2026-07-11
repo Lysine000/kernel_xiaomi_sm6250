@@ -22,6 +22,22 @@ jobs:
         run: |
           git clone -q https://github.com/kdrag0n/proton-clang --depth=1 --single-branch "$HOME/proton"
 
+      - name: Diagnostic compiler check
+        run: |
+          export PATH="$HOME/proton/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          echo "=== ELFEDIT PATH ==="
+          which aarch64-linux-gnu-elfedit || echo "Not found"
+          echo "=== CLANG VERSION ==="
+          clang --version
+          echo "=== SIMPLE TEST COMPILE ==="
+          clang -Werror --target=aarch64-linux-gnu -no-integrated-as -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
+          echo "=== DETAILED COMPILE TEST ==="
+          GCC_TOOLCHAIN_DIR=$(dirname $(which aarch64-linux-gnu-elfedit))
+          CLANG_FLAGS="--target=aarch64-linux-gnu --prefix=$GCC_TOOLCHAIN_DIR/ --gcc-toolchain=$(realpath $GCC_TOOLCHAIN_DIR/..) -no-integrated-as"
+          clang -Werror $CLANG_FLAGS -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
+
       - name: Build kernel
         run: |
           export PATH="$HOME/proton/bin:$PATH"
