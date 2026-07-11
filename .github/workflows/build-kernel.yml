@@ -73,12 +73,10 @@ jobs:
       - name: Verify kernel outputs exist
         run: |
           ls -la out/arch/arm64/boot/Image.gz-dtb
-          ls -la out/arch/arm64/boot/dtbo.img
 
       - name: Package with the repo's own AnyKernel3
         run: |
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           cd AnyKernel3
           zip -r9 ../miatoll-corvus-kernel-$(date +%Y%m%d-%H%M).zip * -x .git README.md
 
