@@ -37,6 +37,8 @@ jobs:
           GCC_TOOLCHAIN_DIR=$(dirname $(which aarch64-linux-gnu-elfedit))
           CLANG_FLAGS="--target=aarch64-linux-gnu --prefix=$GCC_TOOLCHAIN_DIR/ --gcc-toolchain=$(realpath $GCC_TOOLCHAIN_DIR/..) -no-integrated-as"
           clang -Werror $CLANG_FLAGS -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
+          echo "=== FIXED COMPILE TEST ==="
+          clang -Werror --target=aarch64-linux-gnu --prefix=/usr/bin/ --gcc-toolchain=/usr -no-integrated-as -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
 
       - name: Build kernel
         run: |
@@ -52,7 +54,8 @@ jobs:
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
+            STRIP=llvm-strip \
+            GCC_TOOLCHAIN_DIR=/usr/bin
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -61,7 +64,8 @@ jobs:
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip 2>&1 | tee build.log
+            STRIP=llvm-strip \
+            GCC_TOOLCHAIN_DIR=/usr/bin 2>&1 | tee build.log
 
       - name: Verify kernel outputs exist
         run: |
