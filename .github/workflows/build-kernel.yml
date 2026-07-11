@@ -55,7 +55,9 @@ jobs:
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
+            STRIP=llvm-strip \
+            GCC_TOOLCHAIN_DIR=/usr/bin/ \
+            GCC_TOOLCHAIN=/usr
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -64,7 +66,9 @@ jobs:
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip 2>&1 | tee build.log
+            STRIP=llvm-strip \
+            GCC_TOOLCHAIN_DIR=/usr/bin/ \
+            GCC_TOOLCHAIN=/usr 2>&1 | tee build.log
 
       - name: Verify kernel outputs exist
         run: |
