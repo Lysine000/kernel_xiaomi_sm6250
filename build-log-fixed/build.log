@@ -1,0 +1,11 @@
+make[1]: Entering directory '/home/runner/work/kernel_xiaomi_sm6250/kernel_xiaomi_sm6250/out'
+  GEN     ./Makefile
+scripts/kconfig/conf  --silentoldconfig Kconfig
+arch/arm64/Makefile:57: Detected assembler with broken .inst; disassembly will be unreliable
+  CHK     include/config/kernel.release
+Cannot use CONFIG_CC_STACKPROTECTOR_STRONG: -fstack-protector-strong not supported by compiler
+  UPD     include/config/kernel.release
+make[1]: *** [/home/runner/work/kernel_xiaomi_sm6250/kernel_xiaomi_sm6250/Makefile:1223: prepare-compiler-check] Error 1
+make[1]: *** Waiting for unfinished jobs....
+make[1]: Leaving directory '/home/runner/work/kernel_xiaomi_sm6250/kernel_xiaomi_sm6250/out'
+make: *** [Makefile:146: sub-make] Error 2
