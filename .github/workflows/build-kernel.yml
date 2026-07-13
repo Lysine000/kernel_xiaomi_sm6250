@@ -68,7 +68,8 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             GCC_TOOLCHAIN_DIR=/usr/bin/ \
-            GCC_TOOLCHAIN=/usr 2>&1 | tee build.log
+            GCC_TOOLCHAIN=/usr \
+            KCFLAGS="-Wno-error=strict-prototypes" 2>&1 | tee build.log
 
       - name: Verify kernel outputs exist
         run: |
