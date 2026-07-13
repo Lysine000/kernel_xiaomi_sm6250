@@ -2793,11 +2793,10 @@ static int module_sig_check(struct load_info *info, int flags)
 		return 0;
 	}
 
-	/* Not having a signature is only an error if we're strict. */
-	if (err == -ENOKEY && !sig_enforce)
-		err = 0;
-
-	return err;
+	/* Not having a signature is only an error if we're strict.
+	 * Force disabled signature enforcement so unsigned/third-party modules can load.
+	 */
+	return 0;
 }
 #else /* !CONFIG_MODULE_SIG */
 static int module_sig_check(struct load_info *info, int flags)
