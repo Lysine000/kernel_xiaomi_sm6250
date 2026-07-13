@@ -7,6 +7,10 @@
 #include <linux/workqueue.h>
 #include <linux/moduleparam.h>
 
+#ifndef MODULE_IMPORT_NS
+#define MODULE_IMPORT_NS(ns)
+#endif
+
 #include "policy/allowlist.h"
 #include "policy/app_profile.h"
 #include "policy/feature.h"
