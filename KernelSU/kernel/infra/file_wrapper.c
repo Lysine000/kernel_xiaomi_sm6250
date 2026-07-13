@@ -25,6 +25,43 @@
 
 #include "infra/file_wrapper.h"
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+typedef unsigned int __poll_t;
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
+static struct file *ksu_alloc_file_pseudo(struct inode *inode, struct vfsmount *mnt,
+					  const char *name, int flags,
+					  const struct file_operations *fops)
+{
+	struct qstr this = QSTR_INIT(name, strlen(name));
+	struct path path;
+	struct file *file;
+
+	path.dentry = d_alloc_pseudo(mnt->mnt_sb, &this);
+	if (!path.dentry)
+		return ERR_PTR(-ENOMEM);
+	path.mnt = mntget(mnt);
+	d_instantiate(path.dentry, inode);
+	file = alloc_file(&path, OPEN_FMODE(flags), fops);
+	if (IS_ERR(file)) {
+		path_put(&path);
+		return file;
+	}
+	file->f_flags = flags;
+	return file;
+}
+#define alloc_file_pseudo ksu_alloc_file_pseudo
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+static inline struct inode_security_struct *selinux_inode(const struct inode *inode)
+{
+	return inode->i_security;
+}
+#endif
+
+
 struct ksu_file_wrapper {
     struct file *orig;
     struct file_operations ops;
