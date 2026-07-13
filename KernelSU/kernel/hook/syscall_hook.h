@@ -5,7 +5,7 @@
 #if defined(__x86_64__)
 typedef sys_call_ptr_t syscall_fn_t;
 #else
-typedef long (*syscall_fn_t)(struct pt_regs *);
+typedef long (*syscall_fn_t)(const struct pt_regs *);
 #endif
 
 extern syscall_fn_t *ksu_syscall_table;
