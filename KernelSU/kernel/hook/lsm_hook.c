@@ -11,9 +11,14 @@
 #include "hook/lsm_hook.h"
 #include "hook/patch_memory.h"
 #include "klog.h" // IWYU pragma: keep
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
-#include "linux/static_call.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
+#define KSU_LSM_HEAD_TYPE struct hlist_head
+#define KSU_LSM_FOR_EACH(entry, head) hlist_for_each_entry(entry, head, list)
+#else
+#define KSU_LSM_HEAD_TYPE struct list_head
+#define KSU_LSM_FOR_EACH(entry, head) list_for_each_entry(entry, head, list)
 #endif
+
 struct ksu_lsm_hook_entry {
     struct ksu_lsm_hook *hook;
 };
@@ -102,7 +107,11 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
     size_t i;
 #else
     unsigned long heads_addr;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
     struct hlist_head *head;
+#else
+    struct list_head *head;
+#endif
     struct security_hook_list *selected_entry = NULL;
     void **selected_slot = NULL;
     void *selected_origin = NULL;
@@ -288,13 +297,13 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
         pr_warn("lookup head size failed");
     }
 
-    head = (struct hlist_head *)heads_addr;
-    struct hlist_head *head_end = (struct hlist_head *)(heads_addr + heads_size);
+    head = (KSU_LSM_HEAD_TYPE *)heads_addr;
+    KSU_LSM_HEAD_TYPE *head_end = (KSU_LSM_HEAD_TYPE *)(heads_addr + heads_size);
     pr_info("heads_addr 0x%lx head_offset 0x%lx heads_size %ld hook_offset 0x%lx\n", (unsigned long)heads_addr,
             hook->head_offset, heads_size, hook->hook_offset);
 
     for (; head < head_end; head++) {
-        hlist_for_each_entry (entry, head, list) {
+        KSU_LSM_FOR_EACH (entry, head) {
             void **slot = (void **)((char *)entry + hook->hook_offset);
             void *current_origin = READ_ONCE(*slot);
             int j;
@@ -320,13 +329,13 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
         if (selected_entry) {
             if (hook->offset) {
                 head += hook->offset;
-                if (head < (struct hlist_head *)heads_addr || head >= head_end) {
+                if (head < (KSU_LSM_HEAD_TYPE *)heads_addr || head >= head_end) {
                     pr_err("invalid offset\n");
                     ret = -EINVAL;
                     goto out_unlock;
                 }
                 // just check if already hooked
-                hlist_for_each_entry (entry, head, list) {
+                KSU_LSM_FOR_EACH (entry, head) {
                     void **slot = (void **)((char *)entry + hook->hook_offset);
                     void *current_origin = READ_ONCE(*slot);
                     if (current_origin == hook->replacement) {
@@ -334,6 +343,7 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
                         goto out_unlock;
                     }
                 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
                 if (head->first) {
                     selected_entry = hlist_entry(head->first, struct security_hook_list, list);
                     selected_slot = (void **)((char *)selected_entry + hook->hook_offset);
@@ -348,6 +358,22 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
                     selected_slot = (void **)&head->first;
                     selected_origin = NULL;
                 }
+#else
+                if (head->next != head) {
+                    selected_entry = list_entry(head->next, struct security_hook_list, list);
+                    selected_slot = (void **)((char *)selected_entry + hook->hook_offset);
+                    selected_origin = *selected_slot;
+                } else {
+                    selected_entry = &hook->list;
+                    hook->list.head = head;
+                    hook->list.list.next = head;
+                    hook->list.list.prev = head;
+                    hook->list.lsm = "ksu";
+                    *(void **)((char *)selected_entry + hook->hook_offset) = hook->replacement;
+                    selected_slot = (void **)&head->next;
+                    selected_origin = NULL;
+                }
+#endif
             }
             break;
         }
@@ -365,6 +391,7 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
         goto out_unlock;
     }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
     if (selected_origin) {
         pr_info("patch func addr\n");
         ret = ksu_lsm_hook_patch_slot(selected_slot, hook->replacement);
@@ -372,6 +399,18 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
         pr_info("patch head->first\n");
         ret = ksu_lsm_hook_patch_slot(selected_slot, &hook->list);
     }
+#else
+    if (selected_origin) {
+        pr_info("patch func addr\n");
+        ret = ksu_lsm_hook_patch_slot(selected_slot, hook->replacement);
+    } else {
+        pr_info("patch head->next\n");
+        ret = ksu_lsm_hook_patch_slot(selected_slot, &hook->list);
+        if (!ret) {
+            ksu_lsm_hook_patch_slot((void **)&head->prev, &hook->list);
+        }
+    }
+#endif
 
     if (ret) {
         pr_err("lsm_hook: failed to patch %s\n", hook->head_name ?: "unknown");
@@ -411,8 +450,14 @@ void ksu_lsm_unhook(struct ksu_lsm_hook *hook)
     slot = (void **)((char *)hook->entry + hook->hook_offset);
 #else
     if (hook->entry == &hook->list) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
         slot = (void **)&hook->list.head->first;
         pr_info("unhook patch head->first\n");
+#else
+        slot = (void **)&hook->list.head->next;
+        ksu_lsm_hook_patch_slot((void **)&hook->list.head->prev, hook->list.head);
+        pr_info("unhook patch head->next\n");
+#endif
     } else {
         slot = (void **)((char *)hook->entry + hook->hook_offset);
         pr_info("unhook patch slot\n");
