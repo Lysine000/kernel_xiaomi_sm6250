@@ -14,13 +14,19 @@
 #include "asm/cacheflush.h"
 #include "asm-generic/fixmap.h"
 #include <linux/version.h>
+#include <asm/pgtable.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 #define copy_to_kernel_nofault probe_kernel_write
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
-#define __flush_icache_range(start, end) flush_icache_range(start, end)
+#undef ksu_flush_icache
+#define ksu_flush_icache(start, end) flush_icache_range(start, end)
+#endif
+
+#ifndef __pte_to_phys
+#define __pte_to_phys(pte) (__pfn_to_phys(pte_pfn(pte)))
 #endif
 
 // https://github.com/fuqiuluo/ovo/blob/f7da411458e87d32438dc14fce5a3313ed0c967e/ovo/mmuhack.c#L21
