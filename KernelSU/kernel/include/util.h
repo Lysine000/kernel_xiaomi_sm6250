@@ -12,6 +12,12 @@
 #else
 #define ksu_close_fd sys_close
 #endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+static inline long ksys_unshare(unsigned long flags)
+{
+	return sys_unshare(flags);
+}
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 #define strncpy_from_user_nofault(dst, src, count) strncpy_from_unsafe((dst), (const void *)(src), (count))
