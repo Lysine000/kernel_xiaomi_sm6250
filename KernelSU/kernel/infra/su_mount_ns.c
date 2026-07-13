@@ -13,7 +13,10 @@
 #include <linux/syscalls.h>
 #include <linux/task_work.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 #include <uapi/linux/mount.h>
+#endif
+
 
 #include "arch.h"
 #include "klog.h" // IWYU pragma: keep
