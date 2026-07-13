@@ -20,11 +20,6 @@
 #define copy_to_kernel_nofault probe_kernel_write
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
-#undef ksu_flush_icache
-#define ksu_flush_icache(start, end) flush_icache_range(start, end)
-#endif
-
 #ifndef __pte_to_phys
 #define __pte_to_phys(pte) (__pfn_to_phys(pte_pfn(pte)))
 #endif
@@ -114,7 +109,11 @@ fail:
 #define ksu_flush_icache(start, end) caches_clean_inval_pou
 #else
 #define ksu_flush_dcache(start, sz) __flush_dcache_area((void *)start, sz)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 #define ksu_flush_icache(start, end) __flush_icache_range
+#else
+#define ksu_flush_icache(start, end) flush_icache_range(start, end)
+#endif
 #endif
 
 struct patch_text_info {
