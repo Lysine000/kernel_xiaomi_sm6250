@@ -16,6 +16,27 @@
 #include <linux/compiler_types.h>
 #include <linux/hashtable.h>
 #include <linux/kref.h>
+#include <linux/sched/task.h>
+
+#ifndef TWA_RESUME
+#define TWA_RESUME true
+#endif
+
+#ifndef fallthrough
+#define fallthrough do {} while (0)
+#endif
+
+#ifndef strscpy_pad
+static inline ssize_t ksu_strscpy_pad(char *dest, const char *src, size_t count)
+{
+	ssize_t res = strscpy(dest, src, count);
+	if (res >= 0 && res < count)
+		memset(dest + res, 0, count - res);
+	return res;
+}
+#define strscpy_pad ksu_strscpy_pad
+#endif
+
 
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
