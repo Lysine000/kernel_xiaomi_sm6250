@@ -12,6 +12,11 @@
 #else
 #define ksu_close_fd sys_close
 #endif
+
+#ifndef TWA_RESUME
+#define TWA_RESUME true
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 static inline long ksys_unshare(unsigned long flags)
 {
