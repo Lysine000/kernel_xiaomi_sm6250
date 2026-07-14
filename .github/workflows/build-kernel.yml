@@ -18,19 +18,23 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2
 
-      - name: Install official KernelSU v0.9.5 (last non-GKI release)
+      - name: Install KernelSU-Next (legacy) with manual hooks
         run: |
           rm -rf KernelSU KernelSU-Next
           rm -f drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
           echo "=== Verify symlink ==="
           ls -la drivers/kernelsu
-          echo "=== Verify Kconfig/Makefile still reference it ==="
-          grep -n "kernelsu" drivers/Kconfig
-          grep -n "kernelsu" drivers/Makefile
-          echo "=== Confirm defconfig has required options ==="
+          echo "=== Apply manual syscall hook patch (fixes allowlist not persisting) ==="
+          curl -L https://github.com/rifsxd/android_kernel_xiaomi_sm6250/commit/7f5f639fb8d98e893e9bfc14d922e865b42c1806.patch -o ksu_manual_hook.patch
+          git apply --reject --whitespace=fix ksu_manual_hook.patch || true
+          echo "=== Any rejected hunks (needs manual attention if non-empty) ==="
+          find . -name "*.rej" -exec echo "REJECTED: {}" \; -exec cat {} \;
+          echo "=== Enable manual hook mode in defconfig ==="
           DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
-          grep -n "CONFIG_KSU\|CONFIG_KPROBES\|CONFIG_HAVE_KPROBES\|CONFIG_KPROBE_EVENTS" "$DEFCONFIG"
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG"
+          echo "=== Final defconfig KSU section ==="
+          grep -n "CONFIG_KSU" "$DEFCONFIG"
 
       - name: Get Proton Clang
         run: |
