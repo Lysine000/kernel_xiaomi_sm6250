@@ -3,6 +3,20 @@
 #include "linux/sched.h"
 #include "objsec.h"
 #include "linux/version.h"
+#include <linux/security.h>
+#include <linux/selinux.h>
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
+static inline struct task_security_struct *selinux_cred(const struct cred *cred)
+{
+	return cred->security;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+extern int selinux_enforcing;
+#endif
+
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
 
@@ -71,20 +85,34 @@ void setup_ksu_cred(void)
 void setenforce(bool enforce)
 {
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+    selinux_enforcing = enforce;
+#else
     selinux_state.enforcing = enforce;
+#endif
 #endif
 }
 
 bool getenforce(void)
 {
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+    if (!selinux_is_enabled()) {
+        return false;
+    }
+#else
     if (selinux_state.disabled) {
         return false;
     }
 #endif
+#endif
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+    return selinux_enforcing;
+#else
     return selinux_state.enforcing;
+#endif
 #else
     return true;
 #endif
