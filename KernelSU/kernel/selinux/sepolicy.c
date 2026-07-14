@@ -537,6 +537,87 @@ static const struct hashtab_key_params filenametr_key_params = {
 };
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+static bool add_filename_trans(struct policydb *db, const char *s, const char *t, const char *c, const char *d,
+                               const char *o)
+{
+    struct type_datum *src, *tgt, *def;
+    struct class_datum *cls;
+
+    src = symtab_search(&db->p_types, s);
+    if (src == NULL) {
+        pr_warn("source type %s does not exist\n", s);
+        return false;
+    }
+    tgt = symtab_search(&db->p_types, t);
+    if (tgt == NULL) {
+        pr_warn("target type %s does not exist\n", t);
+        return false;
+    }
+    cls = symtab_search(&db->p_classes, c);
+    if (cls == NULL) {
+        pr_warn("class %s does not exist\n", c);
+        return false;
+    }
+    def = symtab_search(&db->p_types, d);
+    if (def == NULL) {
+        pr_warn("default type %s does not exist\n", d);
+        return false;
+    }
+
+    struct filename_trans key;
+    key.stype = src->value;
+    key.ttype = tgt->value;
+    key.tclass = cls->value;
+    key.name = o;
+
+    struct filename_trans_datum *trans = hashtab_search(db->filename_trans, &key);
+    if (trans) {
+        // Overwrite existing otype
+        trans->otype = def->value;
+        return true;
+    }
+
+    struct filename_trans *new_key = kzalloc(sizeof(*new_key), GFP_KERNEL);
+    if (!new_key)
+        return false;
+    
+    new_key->stype = src->value;
+    new_key->ttype = tgt->value;
+    new_key->tclass = cls->value;
+    new_key->name = kstrdup(o, GFP_KERNEL);
+    if (!new_key->name) {
+        kfree(new_key);
+        return false;
+    }
+
+    trans = kzalloc(sizeof(*trans), GFP_KERNEL);
+    if (!trans) {
+        kfree(new_key->name);
+        kfree(new_key);
+        return false;
+    }
+    trans->otype = def->value;
+
+    int rc = ebitmap_set_bit(&db->filename_trans_ttypes, tgt->value, 1);
+    if (rc) {
+        kfree(trans);
+        kfree(new_key->name);
+        kfree(new_key);
+        return false;
+    }
+
+    rc = hashtab_insert(db->filename_trans, new_key, trans);
+    if (rc) {
+        kfree(trans);
+        kfree(new_key->name);
+        kfree(new_key);
+        return false;
+    }
+
+    return true;
+}
+#else
 static bool add_filename_trans(struct policydb *db, const char *s, const char *t, const char *c, const char *d,
                                const char *o)
 {
@@ -597,6 +678,7 @@ static bool add_filename_trans(struct policydb *db, const char *s, const char *t
     db->compat_filename_trans_count++;
     return ebitmap_set_bit(&trans->stypes, src->value - 1, 1) == 0;
 }
+#endif
 
 static bool add_genfscon(struct policydb *db, const char *fs_name, const char *path, const char *context)
 {
@@ -658,6 +740,77 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
         return false;
     }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+    struct flex_array *new_type_attr_map_array = flex_array_alloc(sizeof(struct ebitmap), value, GFP_KERNEL);
+    if (!new_type_attr_map_array) {
+        pr_err("add_type: alloc type_attr_map_array failed\n");
+        return false;
+    }
+    if (flex_array_prealloc(new_type_attr_map_array, 0, value, GFP_KERNEL)) {
+        flex_array_free(new_type_attr_map_array);
+        return false;
+    }
+    int i;
+    for (i = 0; i < value - 1; i++) {
+        struct ebitmap *e = flex_array_get(db->type_attr_map_array, i);
+        if (e) {
+            flex_array_put(new_type_attr_map_array, i, e, GFP_KERNEL);
+        }
+    }
+    struct ebitmap new_ebitmap;
+    ebitmap_init(&new_ebitmap);
+    ebitmap_set_bit(&new_ebitmap, value - 1, 1);
+    flex_array_put(new_type_attr_map_array, value - 1, &new_ebitmap, GFP_KERNEL);
+
+    struct flex_array *new_type_val_to_struct = flex_array_alloc(sizeof(struct type_datum *), value, GFP_KERNEL);
+    if (!new_type_val_to_struct) {
+        flex_array_free(new_type_attr_map_array);
+        pr_err("add_type: alloc type_val_to_struct failed\n");
+        return false;
+    }
+    if (flex_array_prealloc(new_type_val_to_struct, 0, value, GFP_KERNEL)) {
+        flex_array_free(new_type_val_to_struct);
+        flex_array_free(new_type_attr_map_array);
+        return false;
+    }
+    for (i = 0; i < value - 1; i++) {
+        struct type_datum *ptr = flex_array_get_ptr(db->type_val_to_struct_array, i);
+        if (ptr) {
+            flex_array_put_ptr(new_type_val_to_struct, i, ptr, GFP_KERNEL);
+        }
+    }
+    flex_array_put_ptr(new_type_val_to_struct, value - 1, type, GFP_KERNEL);
+
+    struct flex_array *new_val_to_name_types = flex_array_alloc(sizeof(char *), value, GFP_KERNEL);
+    if (!new_val_to_name_types) {
+        flex_array_free(new_type_val_to_struct);
+        flex_array_free(new_type_attr_map_array);
+        pr_err("add_type: alloc val_to_name failed\n");
+        return false;
+    }
+    if (flex_array_prealloc(new_val_to_name_types, 0, value, GFP_KERNEL)) {
+        flex_array_free(new_val_to_name_types);
+        flex_array_free(new_type_val_to_struct);
+        flex_array_free(new_type_attr_map_array);
+        return false;
+    }
+    for (i = 0; i < value - 1; i++) {
+        char *ptr = flex_array_get_ptr(db->sym_val_to_name[SYM_TYPES], i);
+        if (ptr) {
+            flex_array_put_ptr(new_val_to_name_types, i, ptr, GFP_KERNEL);
+        }
+    }
+    flex_array_put_ptr(new_val_to_name_types, value - 1, key, GFP_KERNEL);
+
+    flex_array_free(db->type_attr_map_array);
+    db->type_attr_map_array = new_type_attr_map_array;
+
+    flex_array_free(db->type_val_to_struct_array);
+    db->type_val_to_struct_array = new_type_val_to_struct;
+
+    flex_array_free(db->sym_val_to_name[SYM_TYPES]);
+    db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
+#else
     struct ebitmap *new_type_attr_map_array =
         ksu_kvrealloc(db->type_attr_map_array, value * sizeof(struct ebitmap), (value - 1) * sizeof(struct ebitmap));
 
@@ -690,6 +843,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 
     db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
     db->sym_val_to_name[SYM_TYPES][value - 1] = key;
+#endif
 
     int i;
     for (i = 0; i < db->p_roles.nprim; ++i) {
