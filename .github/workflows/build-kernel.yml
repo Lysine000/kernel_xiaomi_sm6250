@@ -32,6 +32,8 @@ jobs:
             mv fs/exec.c.tmp fs/exec.c
           fi
           grep -n -B2 -A1 "extern int ksu_handle_execveat" fs/exec.c
+          grep -rl 'strscpy_pad(' KernelSU-Next/kernel 2>/dev/null | xargs -r sed -i 's/\bstrscpy_pad(/__strscpy_pad(/g'
+          grep -rn '__strscpy_pad(' KernelSU-Next/kernel | head -5
           DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG"
           grep -n "CONFIG_KSU" "$DEFCONFIG"
