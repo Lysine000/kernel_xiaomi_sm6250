@@ -23,50 +23,22 @@ jobs:
           rm -rf KernelSU KernelSU-Next
           rm -f drivers/kernelsu
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
-          echo "=== Verify symlink ==="
           ls -la drivers/kernelsu
-          echo "=== Apply manual syscall hook patch (fixes allowlist not persisting) ==="
           curl -L https://github.com/rifsxd/android_kernel_xiaomi_sm6250/commit/7f5f639fb8d98e893e9bfc14d922e865b42c1806.patch -o ksu_manual_hook.patch
           git apply --reject --whitespace=fix ksu_manual_hook.patch || true
-          echo "=== Any rejected hunks (needs manual attention if non-empty) ==="
           find . -name "*.rej" -exec echo "REJECTED: {}" \; -exec cat {} \;
-          echo "=== Ensure ksu_handle_execveat is declared before use in fs/exec.c ==="
           if ! grep -q "extern int ksu_handle_execveat" fs/exec.c; then
-            sed -i '/^int do_execve(struct filename \*filename,/i\
-#ifdef CONFIG_KSU\
-extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\
-#endif\
-' fs/exec.c
+            awk '/^int do_execve\(struct filename \*filename,/{print "#ifdef CONFIG_KSU"; print "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);"; print "#endif"} {print}' fs/exec.c > fs/exec.c.tmp
+            mv fs/exec.c.tmp fs/exec.c
           fi
-          echo "=== Confirm declaration now present ==="
           grep -n -B2 -A1 "extern int ksu_handle_execveat" fs/exec.c
-          echo "=== Enable manual hook mode in defconfig ==="
           DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG"
-          echo "=== Final defconfig KSU section ==="
           grep -n "CONFIG_KSU" "$DEFCONFIG"
 
       - name: Get Proton Clang
         run: |
           git clone -q https://github.com/kdrag0n/proton-clang --depth=1 --single-branch "$HOME/proton"
-
-      - name: Diagnostic compiler check
-        run: |
-          export PATH="$HOME/proton/bin:$PATH"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          echo "=== ELFEDIT PATH ==="
-          which aarch64-linux-gnu-elfedit || echo "Not found"
-          echo "=== CLANG VERSION ==="
-          clang --version
-          echo "=== SIMPLE TEST COMPILE ==="
-          clang -Werror --target=aarch64-linux-gnu -no-integrated-as -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
-          echo "=== DETAILED COMPILE TEST ==="
-          GCC_TOOLCHAIN_DIR=$(dirname $(which aarch64-linux-gnu-elfedit))
-          CLANG_FLAGS="--target=aarch64-linux-gnu --prefix=$GCC_TOOLCHAIN_DIR/aarch64-linux-gnu- --gcc-toolchain=$(realpath $GCC_TOOLCHAIN_DIR/..) -no-integrated-as"
-          clang -Werror $CLANG_FLAGS -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
-          echo "=== FIXED COMPILE TEST ==="
-          clang -Werror --target=aarch64-linux-gnu --prefix=/usr/bin/aarch64-linux-gnu- --gcc-toolchain=/usr -no-integrated-as -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
 
       - name: Build kernel
         run: |
