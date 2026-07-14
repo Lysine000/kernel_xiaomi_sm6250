@@ -61,7 +61,11 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
     put_group_info(group_info);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+#define seccomp_filter_release(tsk) put_seccomp_filter(tsk)
+#else
 void seccomp_filter_release(struct task_struct *tsk);
+#endif
 
 static void disable_seccomp(void)
 {
