@@ -19,8 +19,9 @@ static inline long ksys_unshare(unsigned long flags)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+#ifndef strncpy_from_user_nofault
 #define strncpy_from_user_nofault(dst, src, count) strncpy_from_unsafe((dst), (const void *)(src), (count))
+#endif
 
 static inline long copy_from_user_nofault(void *dst, const void __user *src, size_t size)
 {
@@ -49,7 +50,7 @@ static inline long copy_to_user_nofault(void __user *dst, const void *src, size_
 
 	return ret ? -EFAULT : 0;
 }
-#endif
+
 
 
 #endif
