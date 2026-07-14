@@ -18,16 +18,19 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2
 
-      - name: Replace official KernelSU with KernelSU-Next
+      - name: Replace official KernelSU with KernelSU-Next (legacy/non-GKI mode)
         run: |
-          rm -rf KernelSU
+          rm -rf KernelSU KernelSU-Next
           rm -f drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
           echo "=== Verify symlink ==="
           ls -la drivers/kernelsu
-          echo "=== Verify Kconfig still references it ==="
+          echo "=== Verify Kconfig/Makefile still reference it ==="
           grep -n "kernelsu" drivers/Kconfig
           grep -n "kernelsu" drivers/Makefile
+          echo "=== Confirm defconfig has required options ==="
+          DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
+          grep -n "CONFIG_KSU\|CONFIG_KPROBES\|CONFIG_HAVE_KPROBES\|CONFIG_KPROBE_EVENTS" "$DEFCONFIG"
 
       - name: Get Proton Clang
         run: |
