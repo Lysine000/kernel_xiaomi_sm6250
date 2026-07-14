@@ -630,6 +630,10 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
     }
     reset_avc_cache();
     ret = success_cmd_count;
+    goto out_free;
+
+out_drop_new_policy:
+    ksu_destroy_sepolicy(pol);
 #else
     rcu_assign_pointer(selinux_state.policy, pol);
     synchronize_rcu();
