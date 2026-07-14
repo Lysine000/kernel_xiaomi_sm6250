@@ -135,14 +135,6 @@ bool is_manager() {
     return legacy_get_info().first > 0;
 }
 
-bool is_pr_build() {
-    auto info = get_info();
-    if (info.version > 0) {
-        return (info.flags & KSU_GET_INFO_FLAG_PR_BUILD) != 0;
-    }
-    return false;
-}
-
 bool uid_should_umount(int uid) {
     struct ksu_uid_should_umount_cmd cmd = {};
     cmd.uid = uid;
@@ -216,6 +208,22 @@ bool is_kernel_umount_enabled() {
     return value != 0;
 }
 
+bool set_adb_root_enabled(bool enabled) {
+    return set_feature(KSU_FEATURE_ADB_ROOT, enabled ? 1 : 0);
+}
+
+bool is_adb_root_enabled() {
+    uint64_t value = 0;
+    bool supported = false;
+    if (!get_feature(KSU_FEATURE_ADB_ROOT, &value, &supported)) {
+        return false;
+    }
+    if (!supported) {
+        return false;
+    }
+    return value != 0;
+}
+
 int set_selinux_hide_enabled(bool enabled) {
     if (!set_feature(KSU_FEATURE_SELINUX_HIDE, enabled ? 1 : 0)) {
         return -errno;
@@ -233,4 +241,57 @@ bool is_selinux_hide_enabled() {
         return false;
     }
     return value != 0;
+}
+
+bool set_avc_spoof_enabled(bool enabled) {
+    struct ksu_set_feature_cmd cmd = {};
+    cmd.feature_id = KSU_FEATURE_AVC_SPOOF;
+    cmd.value = enabled ? 1 : 0;
+    return ksuctl(KSU_IOCTL_SET_FEATURE, &cmd) == 0;
+}
+
+bool is_avc_spoof_enabled() {
+    struct ksu_get_feature_cmd cmd = {};
+    cmd.feature_id = KSU_FEATURE_AVC_SPOOF;
+    if (ksuctl(KSU_IOCTL_GET_FEATURE, &cmd) != 0) {
+        return false;
+    }
+    if (!cmd.supported) {
+        return false;
+    }
+    return cmd.value != 0;
+}
+
+const char* get_hook_mode(void)
+{
+    static struct ksu_get_hook_mode_cmd cmd = {0};
+
+    if (ksuctl(KSU_IOCTL_GET_HOOK_MODE, &cmd) == 0)
+        return cmd.mode;
+
+    return "Unknown";
+}
+
+uid_t get_manager_appid(void)
+{
+    static struct ksu_get_manager_appid_cmd cmd = {0};
+
+    if (ksuctl(KSU_IOCTL_GET_MANAGER_APPID, &cmd) == 0)
+        return cmd.appid;
+
+    return 0;
+}
+
+const char* get_version_tag(void)
+{
+    static struct ksu_get_version_tag_cmd cmd = {0};
+
+    if (ksuctl(KSU_IOCTL_GET_VERSION_TAG, &cmd) == 0)
+        return cmd.tag;
+
+    return "Unknown";
+}
+
+bool is_zygisk_enabled() {
+    return !!getenv("ZYGISK_ENABLED");
 }

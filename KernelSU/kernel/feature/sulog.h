@@ -4,7 +4,7 @@
 #include <linux/types.h>
 
 bool ksu_sulog_is_enabled(void);
-void ksu_sulog_init(void);
-void ksu_sulog_exit(void);
+void __init ksu_sulog_init(void);
+void __exit ksu_sulog_exit(void);
 
 #endif

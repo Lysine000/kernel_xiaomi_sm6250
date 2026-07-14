@@ -29,28 +29,6 @@
 #include "policy/feature.h"
 #include "hook/lsm_hook.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
-static DEFINE_MUTEX(ksu_status_lock);
-#define KSU_STATUS_LOCK() mutex_lock(&ksu_status_lock)
-#define KSU_STATUS_UNLOCK() mutex_unlock(&ksu_status_lock)
-#define KSU_STATUS_PAGE() selinux_kernel_status_page()
-
-#define avc_has_perm(state, ssid, tsid, tclass, requested, auditdata) \
-    avc_has_perm(ssid, tsid, tclass, requested, auditdata)
-#define security_context_to_sid(state, scontext, scontext_len, out_sid, gfp) \
-    security_context_to_sid(scontext, scontext_len, out_sid, gfp)
-#define security_context_str_to_sid(state, scontext, out_sid, gfp) \
-    security_context_str_to_sid(scontext, out_sid, gfp)
-#define security_sid_to_context(state, sid, scontext, scontext_len) \
-    security_sid_to_context(sid, scontext, scontext_len)
-#define security_compute_av_user(state, ssid, tsid, tclass, avd) \
-    security_compute_av_user(ssid, tsid, tclass, avd)
-#else
-#define KSU_STATUS_LOCK() mutex_lock(&selinux_state.status_lock)
-#define KSU_STATUS_UNLOCK() mutex_unlock(&selinux_state.status_lock)
-#define KSU_STATUS_PAGE() (selinux_state.status_page)
-#endif
-
 static DEFINE_MUTEX(selinux_hide_mutex);
 static bool ksu_selinux_hide_enabled __read_mostly = false;
 static bool ksu_selinux_hide_running __read_mostly = false;
@@ -96,9 +74,7 @@ static void (*context_struct_compute_av_fn)(struct policydb *policydb, struct co
                                             struct context *tcontext, u16 tclass, struct av_decision *avd,
                                             struct extended_perms *xperms) = NULL;
 #else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 static struct selinux_state fake_state;
-#endif
 #endif
 
 static write_op_fn *context_write, *access_write;
@@ -271,15 +247,15 @@ static struct page *fake_status = NULL;
 
 static void initialize_fake_status()
 {
-    KSU_STATUS_LOCK();
+    mutex_lock(&selinux_state.status_lock);
     if (fake_status)
         goto out;
-    if (!KSU_STATUS_PAGE()) {
+    if (!selinux_state.status_page) {
         pr_warn("initialize_fake_status: status_page not exist\n");
         goto out;
     }
 
-    struct selinux_kernel_status *status = page_address(KSU_STATUS_PAGE());
+    struct selinux_kernel_status *status = page_address(selinux_state.status_page);
     if (!status->enforcing && !ksu_late_loaded) {
         pr_warn("initialize_fake_status: skip not enforcing\n");
         goto out;
@@ -306,7 +282,7 @@ static void initialize_fake_status()
             new_status->policyload, new_status->enforcing);
 
 out:
-    KSU_STATUS_UNLOCK();
+    mutex_unlock(&selinux_state.status_lock);
 }
 
 typedef int (*sel_open_handle_status_fn)(struct inode *inode, struct file *filp);
@@ -315,9 +291,9 @@ static int my_sel_open_handle_status(struct inode *inode, struct file *filp)
 {
     if (likely(current_uid().val >= 10000 && ksu_selinux_hide_enabled)) {
         void *data;
-        KSU_STATUS_LOCK();
+        mutex_lock(&selinux_state.status_lock);
         data = fake_status;
-        KSU_STATUS_UNLOCK();
+        mutex_unlock(&selinux_state.status_lock);
         if (data) {
             filp->private_data = data;
             return 0;
@@ -358,10 +334,8 @@ static int ksu_selinux_hide_enable()
         pr_warn("context_struct_compute_av not found!\n");
     }
 #else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
     fake_state.initialized = true;
     fake_state.policy = backup_sepolicy;
-#endif
 #endif
 
     context_write = &selinux_write_op[SEL_CONTEXT];
@@ -532,11 +506,11 @@ void __exit ksu_selinux_hide_exit()
     }
     mutex_unlock(&selinux_hide_mutex);
     ksu_unregister_feature_handler(KSU_FEATURE_SELINUX_HIDE);
-    KSU_STATUS_LOCK();
+    mutex_lock(&selinux_state.status_lock);
     if (fake_status)
         __free_page(fake_status);
     fake_status = NULL;
-    KSU_STATUS_UNLOCK();
+    mutex_unlock(&selinux_state.status_lock);
 }
 
 void ksu_selinux_hide_drop_backup_if_unused()

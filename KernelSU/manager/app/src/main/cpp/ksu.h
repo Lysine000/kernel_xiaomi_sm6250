@@ -28,13 +28,19 @@ bool is_late_load_mode();
 
 bool is_manager();
 
-bool is_pr_build();
-
 using p_key_t = char[KSU_MAX_PACKAGE_NAME];
 
 bool set_app_profile(const app_profile *profile);
 
 int get_app_profile(app_profile *profile);
+
+const char* get_hook_mode(void);
+
+const char* get_version_tag(void);
+
+uid_t get_manager_appid(void);
+
+bool is_zygisk_enabled();
 
 // Su compat
 bool set_su_enabled(bool enabled);
@@ -46,10 +52,20 @@ bool set_kernel_umount_enabled(bool enabled);
 
 bool is_kernel_umount_enabled();
 
+// ADB root
+bool set_adb_root_enabled(bool enabled);
+
+bool is_adb_root_enabled();
+
 // SELinux hide
 int set_selinux_hide_enabled(bool enabled);
 
 bool is_selinux_hide_enabled();
+
+// Avc spoof
+bool set_avc_spoof_enabled(bool enabled);
+
+bool is_avc_spoof_enabled();
 
 bool get_allow_list(struct ksu_new_get_allow_list_cmd *);
 

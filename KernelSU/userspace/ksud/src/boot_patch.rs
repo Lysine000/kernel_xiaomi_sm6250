@@ -238,6 +238,7 @@ mod android {
             .collect()
     }
 
+
     pub(super) fn auto_boot_partition_path(
         kmi: &str,
         ota: bool,
@@ -340,6 +341,7 @@ fn parse_kmi_from_kernel(kernel: &Path) -> Result<String> {
     let data = std::fs::read(kernel).context("Failed to read kernel file")?;
     parse_kmi(&data)
 }
+
 
 fn parse_kmi_from_boot(image: &Path) -> Result<String> {
     let data = map_file(image)?;
@@ -497,8 +499,6 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             no_custom_rc,
         } = args;
 
-        println!(include_str!("banner"));
-
         #[cfg(target_os = "android")]
         let patch_file = image.is_some();
 
@@ -518,8 +518,13 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
 
         let kmi = kmi.map_or_else(
             || -> Result<_> {
-                if kmod.is_some() {
-                    return Ok(String::new());
+                #[cfg(target_os = "android")]
+                if ota {
+                    let slot_suffix = get_slot_suffix(true);
+                    println!("- Trying to auto detect KMI version from boot");
+                    return parse_kmi_from_boot(Path::new(&format!(
+                        "/dev/block/by-name/boot{slot_suffix}"
+                    )));
                 }
                 #[cfg(target_os = "android")]
                 match get_current_kmi() {
@@ -541,7 +546,7 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
                         "- Trying to auto detect KMI version for {}",
                         kernel_path.display()
                     );
-                    parse_kmi_from_kernel(kernel_path)?
+                   parse_kmi_from_kernel(kernel_path)?
                 } else {
                     String::new()
                 })
@@ -742,7 +747,7 @@ pub fn patch(args: BootPatchArgs) -> Result<()> {
             let output_dir = out.unwrap_or(std::env::current_dir()?);
             let name = out_name.unwrap_or_else(|| {
                 let now = chrono::Utc::now();
-                format!("kernelsu_patched_{}.img", now.format("%Y%m%d_%H%M%S"))
+                format!("kernelsu_next_patched_{}.img", now.format("%Y%m%d_%H%M%S"))
             });
             let output_image = output_dir.join(name);
             std::fs::write(&output_image, &new_boot_bytes).context("write out new boot failed")?;
@@ -887,7 +892,6 @@ pub fn restore(args: BootRestoreArgs) -> Result<()> {
             rebuild_without_ksu(&boot_image, &mut cpio, vendor_ramdisk_idx)?
         }
     };
-
     drop(boot_image);
     drop(bootimage_data);
 
@@ -911,7 +915,7 @@ pub fn restore(args: BootRestoreArgs) -> Result<()> {
         let output_dir = out.unwrap_or(std::env::current_dir()?);
         let name = out_name.unwrap_or_else(|| {
             let now = chrono::Utc::now();
-            format!("kernelsu_restore_{}.img", now.format("%Y%m%d_%H%M%S"))
+            format!("kernelsu_next_restore_{}.img", now.format("%Y%m%d_%H%M%S"))
         });
         let output_image = output_dir.join(name);
         std::fs::write(&output_image, &new_boot_bytes).context("copy out new boot failed")?;

@@ -3,10 +3,6 @@
 #include <linux/uaccess.h>
 #include <linux/types.h>
 #include <linux/version.h>
-#undef LINUX_VERSION_CODE
-#define LINUX_VERSION_CODE 265845
-#undef KERNEL_VERSION
-#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 #include <linux/lockdep.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -21,17 +17,11 @@
 
 struct selinux_policy *backup_sepolicy;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
-#include <linux/irqflags.h>
-extern struct sidtab sidtab;
-extern u32 latest_granting;
-#endif
-
 #define SELINUX_POLICY_INSTEAD_SELINUX_SS
 
 #define ALL NULL
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
 extern int avc_ss_reset(u32 seqno);
 #else
 extern int avc_ss_reset(struct selinux_avc *avc, u32 seqno);
@@ -39,7 +29,7 @@ extern int avc_ss_reset(struct selinux_avc *avc, u32 seqno);
 // reset avc cache table, otherwise the new rules will not take effect if already denied
 static void reset_avc_cache()
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)) || (LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
     avc_ss_reset(0);
     selnl_notify_policyload(0);
     selinux_status_update_policyload(0);
@@ -54,50 +44,6 @@ static void reset_avc_cache()
 
 void apply_kernelsu_rules()
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
-    struct selinux_policy *pol;
-    struct policydb *db;
-    struct selinux_policy old_pol_struct;
-
-    old_pol_struct.policydb = policydb;
-    old_pol_struct.sidtab = &sidtab;
-    old_pol_struct.latest_granting = latest_granting;
-
-    if (!getenforce()) {
-        pr_info("SELinux permissive or disabled, apply rules!\n");
-    }
-
-    backup_sepolicy = ksu_dup_sepolicy(&old_pol_struct);
-    if (IS_ERR(backup_sepolicy)) {
-        pr_err("failed to create backup sepolicy: %ld\n", PTR_ERR(backup_sepolicy));
-        backup_sepolicy = NULL;
-    } else {
-        backup_sepolicy->sidtab = kzalloc(sizeof(*backup_sepolicy->sidtab), GFP_KERNEL);
-        if (!backup_sepolicy->sidtab) {
-            pr_err("failed to alloc backup sidtab\n");
-            ksu_destroy_sepolicy(backup_sepolicy);
-            backup_sepolicy = NULL;
-        } else {
-            int ret = policydb_load_isids(&backup_sepolicy->policydb, backup_sepolicy->sidtab);
-            if (ret) {
-                pr_err("failed to load isids for backup sepolicy: %d!\n", ret);
-                kfree(backup_sepolicy->sidtab);
-                ksu_destroy_sepolicy(backup_sepolicy);
-                backup_sepolicy = NULL;
-            } else {
-                pr_info("backup sepolicy success! latest_granting=%d\n", backup_sepolicy->latest_granting);
-            }
-        }
-    }
-
-    pol = ksu_dup_sepolicy(&old_pol_struct);
-    if (IS_ERR(pol)) {
-        pr_err("failed to dup selinux_policy: %ld\n", PTR_ERR(pol));
-        return;
-    }
-
-    db = &pol->policydb;
-#else
     struct selinux_policy *pol, *old_pol = selinux_state.policy;
     struct policydb *db;
 
@@ -129,14 +75,14 @@ void apply_kernelsu_rules()
             }
         }
     }
-    pol = ksu_dup_sepolicy(rcu_dereference_protected(old_pol, lockdep_is_held(&selinux_state.policy_mutex)));
+    pol = ksu_dup_sepolicy(rcu_dereference_protected(
+        old_pol, lockdep_is_held(&selinux_state.policy_mutex)));
     if (IS_ERR(pol)) {
         pr_err("failed to dup selinux_policy: %ld\n", PTR_ERR(pol));
         goto out_unlock;
     }
 
     db = &pol->policydb;
-#endif
 
     ksu_type(db, KERNEL_SU_DOMAIN, "domain");
     ksu_permissive(db, KERNEL_SU_DOMAIN);
@@ -210,30 +156,6 @@ void apply_kernelsu_rules()
     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
-    {
-        unsigned long flags;
-        struct policydb old_db;
-        struct sidtab old_tab;
-
-        local_irq_save(flags);
-        memcpy(&old_db, &policydb, sizeof(policydb));
-        memcpy(&policydb, &pol->policydb, sizeof(policydb));
-
-        sidtab_set(&old_tab, &sidtab);
-        sidtab_set(&sidtab, pol->sidtab);
-
-        latest_granting = ++latest_granting;
-        local_irq_restore(flags);
-
-        policydb_destroy(&old_db);
-        sidtab_shutdown(&old_tab);
-
-        kfree(pol->sidtab);
-        kfree(pol);
-    }
-    reset_avc_cache();
-#else
     rcu_assign_pointer(selinux_state.policy, pol);
     synchronize_rcu();
     ksu_destroy_sepolicy(old_pol);
@@ -241,7 +163,6 @@ void apply_kernelsu_rules()
     reset_avc_cache();
 out_unlock:
     mutex_unlock(&selinux_state.policy_mutex);
-#endif
 }
 
 #define KSU_SEPOLICY_MAX_BATCH_SIZE (8U * 1024U * 1024U)
@@ -262,7 +183,8 @@ static size_t sepol_remaining(const struct sepol_batch_cursor *cursor)
     return (size_t)(cursor->end - cursor->cur);
 }
 
-static int sepol_read_cmd_header(struct sepol_batch_cursor *cursor, struct sepol_data *header)
+static int sepol_read_cmd_header(struct sepol_batch_cursor *cursor,
+                                 struct sepol_data *header)
 {
     if (sepol_remaining(cursor) < sizeof(*header)) {
         return -EINVAL;
@@ -274,7 +196,8 @@ static int sepol_read_cmd_header(struct sepol_batch_cursor *cursor, struct sepol
     return 0;
 }
 
-static int sepol_read_string(struct sepol_batch_cursor *cursor, const char **out)
+static int sepol_read_string(struct sepol_batch_cursor *cursor,
+                             const char **out)
 {
     u32 len;
     const char *str;
@@ -340,7 +263,9 @@ static int sepol_expected_argc(u32 cmd)
     }
 }
 
-static int apply_one_sepolicy_cmd(struct policydb *db, const struct sepol_data *header, const char **args)
+static int apply_one_sepolicy_cmd(struct policydb *db,
+                                  const struct sepol_data *header,
+                                  const char **args)
 {
     bool success = false;
     int ret;
@@ -373,9 +298,11 @@ static int apply_one_sepolicy_cmd(struct policydb *db, const struct sepol_data *
         if (header->subcmd == KSU_SEPOLICY_SUBCMD_XPERM_ALLOW) {
             success = ksu_allowxperm(db, args[0], args[1], args[2], args[4]);
         } else if (header->subcmd == KSU_SEPOLICY_SUBCMD_XPERM_AUDITALLOW) {
-            success = ksu_auditallowxperm(db, args[0], args[1], args[2], args[4]);
+            success =
+                ksu_auditallowxperm(db, args[0], args[1], args[2], args[4]);
         } else if (header->subcmd == KSU_SEPOLICY_SUBCMD_XPERM_DONTAUDIT) {
-            success = ksu_dontauditxperm(db, args[0], args[1], args[2], args[4]);
+            success =
+                ksu_dontauditxperm(db, args[0], args[1], args[2], args[4]);
         } else {
             pr_err("sepol: unknown subcmd: %d\n", header->subcmd);
         }
@@ -452,7 +379,8 @@ static int apply_one_sepolicy_cmd(struct policydb *db, const struct sepol_data *
 
         object = args[4];
 
-        success = ksu_type_transition(db, args[0], args[1], args[2], args[3], object);
+        success =
+            ksu_type_transition(db, args[0], args[1], args[2], args[3], object);
         return success ? 0 : -EINVAL;
     }
 
@@ -541,31 +469,16 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
         pr_info("SELinux permissive or disabled when handle policy!\n");
     }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
-    {
-        struct selinux_policy old_pol_struct;
-        old_pol_struct.policydb = policydb;
-        old_pol_struct.sidtab = &sidtab;
-        old_pol_struct.latest_granting = latest_granting;
-
-        pol = ksu_dup_sepolicy(&old_pol_struct);
-        if (IS_ERR(pol)) {
-            ret = PTR_ERR(pol);
-            pr_err("ksu_dup_sepolicy err: %d\n", ret);
-            goto out_free;
-        }
-    }
-#else
     mutex_lock(&selinux_state.policy_mutex);
 
     old_pol = selinux_state.policy;
-    pol = ksu_dup_sepolicy(rcu_dereference_protected(old_pol, lockdep_is_held(&selinux_state.policy_mutex)));
+    pol = ksu_dup_sepolicy(rcu_dereference_protected(
+        old_pol, lockdep_is_held(&selinux_state.policy_mutex)));
     if (IS_ERR(pol)) {
         ret = PTR_ERR(pol);
         pr_err("ksu_dup_sepolicy err: %d\n", ret);
         goto out_unlock;
     }
-#endif
     db = &pol->policydb;
 
     cursor.cur = payload;
@@ -596,49 +509,22 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
         for (arg_index = 0; arg_index < (u32)expected_argc; arg_index++) {
             ret = sepol_read_string(&cursor, &args[arg_index]);
             if (ret < 0) {
-                pr_err("sepol: failed to read cmd #%u arg #%u.\n", cmd_index, arg_index);
+                pr_err("sepol: failed to read cmd #%u arg #%u.\n", cmd_index,
+                       arg_index);
                 goto out_drop_new_policy;
             }
         }
 
         ret = apply_one_sepolicy_cmd(db, &header, args);
         if (ret < 0) {
-            pr_err("sepol: cmd #%u failed, cmd=%u subcmd=%u.\n", cmd_index, header.cmd, header.subcmd);
+            pr_err("sepol: cmd #%u failed, cmd=%u subcmd=%u.\n", cmd_index,
+                   header.cmd, header.subcmd);
         } else {
             success_cmd_count++;
         }
         cmd_index++;
     }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
-    {
-        unsigned long flags;
-        struct policydb old_db;
-        struct sidtab old_tab;
-
-        local_irq_save(flags);
-        memcpy(&old_db, &policydb, sizeof(policydb));
-        memcpy(&policydb, &pol->policydb, sizeof(policydb));
-
-        sidtab_set(&old_tab, &sidtab);
-        sidtab_set(&sidtab, pol->sidtab);
-
-        latest_granting = ++latest_granting;
-        local_irq_restore(flags);
-
-        policydb_destroy(&old_db);
-        sidtab_shutdown(&old_tab);
-
-        kfree(pol->sidtab);
-        kfree(pol);
-    }
-    reset_avc_cache();
-    ret = success_cmd_count;
-    goto out_free;
-
-out_drop_new_policy:
-    ksu_destroy_sepolicy(pol);
-#else
     rcu_assign_pointer(selinux_state.policy, pol);
     synchronize_rcu();
     ksu_destroy_sepolicy(old_pol);
@@ -651,7 +537,6 @@ out_drop_new_policy:
     ksu_destroy_sepolicy(pol);
 out_unlock:
     mutex_unlock(&selinux_state.policy_mutex);
-#endif
 out_free:
     kvfree(payload);
 

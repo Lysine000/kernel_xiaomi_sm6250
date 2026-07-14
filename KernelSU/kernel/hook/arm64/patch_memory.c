@@ -2,7 +2,6 @@
 /*
  * Copyright (C) 2023 bmax121. All Rights Reserved.
  */
-
 #ifdef __aarch64__
 
 #include "../patch_memory.h"
@@ -13,16 +12,6 @@
 #include "linux/stop_machine.h"
 #include "asm/cacheflush.h"
 #include "asm-generic/fixmap.h"
-#include <linux/version.h>
-#include <asm/pgtable.h>
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-#define copy_to_kernel_nofault probe_kernel_write
-#endif
-
-#ifndef __pte_to_phys
-#define __pte_to_phys(pte) (__pfn_to_phys(pte_pfn(pte)))
-#endif
 
 // https://github.com/fuqiuluo/ovo/blob/f7da411458e87d32438dc14fce5a3313ed0c967e/ovo/mmuhack.c#L21
 
@@ -44,12 +33,14 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
     pgd = pgd_offset(mm, addr);
     if (pgd_none(*pgd) || pgd_bad(*pgd))
         goto fail;
-    pr_debug("pgd of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pgd, (uintptr_t)pgd_val(*pgd));
+    pr_debug("pgd of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pgd,
+             (uintptr_t)pgd_val(*pgd));
 
     p4d = p4d_offset(pgd, addr);
     if (p4d_none(*p4d) || p4d_bad(*p4d))
         goto fail;
-    pr_debug("p4d of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)p4d, (uintptr_t)p4d_val(*p4d));
+    pr_debug("p4d of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)p4d,
+             (uintptr_t)p4d_val(*p4d));
 #if defined(p4d_leaf)
     if (p4d_leaf(*p4d)) {
         pr_debug("Address 0x%lx maps to a P4D-level huge page\n", addr);
@@ -60,7 +51,8 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
     pud = pud_offset(p4d, addr);
     if (pud_none(*pud) || pud_bad(*pud))
         goto fail;
-    pr_debug("pud of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pud, (uintptr_t)pud_val(*pud));
+    pr_debug("pud of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pud,
+             (uintptr_t)pud_val(*pud));
 #if defined(pud_leaf)
     if (pud_leaf(*pud)) {
         pr_debug("Address 0x%lx maps to a PUD-level huge page\n", addr);
@@ -69,7 +61,8 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
 #endif
 
     pmd = pmd_offset(pud, addr);
-    pr_debug("pmd of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pmd, (uintptr_t)pmd_val(*pmd));
+    pr_debug("pmd of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pmd,
+             (uintptr_t)pmd_val(*pmd));
 #if defined(pmd_leaf)
     if (pmd_leaf(*pmd)) {
         pr_debug("Address 0x%lx maps to a PMD-level huge page\n", addr);
@@ -100,20 +93,16 @@ fail:
 // https://cs.android.com/android/_/android/kernel/common/+/6d9f07d8f1ffc310a6877153fe882f35ae380799
 // So we need to grep kernel source code to detect which one to use.
 #if KSU_NEW_DCACHE_FLUSH
-#define ksu_flush_dcache(start, sz)                                                                                    \
-    ({                                                                                                                 \
-        unsigned long __start = (start);                                                                               \
-        unsigned long __end = __start + (sz);                                                                          \
-        dcache_clean_inval_poc(__start, __end);                                                                        \
+#define ksu_flush_dcache(start, sz)                                            \
+    ({                                                                         \
+        unsigned long __start = (start);                                       \
+        unsigned long __end = __start + (sz);                                  \
+        dcache_clean_inval_poc(__start, __end);                                \
     })
 #define ksu_flush_icache(start, end) caches_clean_inval_pou
 #else
 #define ksu_flush_dcache(start, sz) __flush_dcache_area((void *)start, sz)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 #define ksu_flush_icache(start, end) __flush_icache_range
-#else
-#define ksu_flush_icache(start, end) flush_icache_range(start, end)
-#endif
 #endif
 
 struct patch_text_info {
@@ -144,7 +133,8 @@ struct patch_text_info {
 // ^2: https://github.com/torvalds/linux/commit/c0eb315ad9719e41ce44708455cc69df7ac9f3f8
 static int ksu_patch_text_nosync(void *dst, void *src, size_t len, int flags)
 {
-    pr_debug("patch dst=0x%lx src=0x%lx len=%ld\n", (unsigned long)dst, (unsigned long)src, len);
+    pr_debug("patch dst=0x%lx src=0x%lx len=%ld\n", (unsigned long)dst,
+             (unsigned long)src, len);
 
     unsigned long p = (unsigned long)dst;
     int ret;

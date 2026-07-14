@@ -3,24 +3,6 @@
 #include "linux/sched.h"
 #include "objsec.h"
 #include "linux/version.h"
-#undef LINUX_VERSION_CODE
-#define LINUX_VERSION_CODE 265845
-#undef KERNEL_VERSION
-#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
-#include <linux/security.h>
-#include <linux/selinux.h>
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
-static inline struct task_security_struct *selinux_cred(const struct cred *cred)
-{
-	return cred->security;
-}
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
-extern int selinux_enforcing;
-#endif
-
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
 
@@ -57,7 +39,8 @@ static int transive_to_domain(const char *domain, struct cred *cred, bool clear_
     }
     error = security_secctx_to_secid(domain, strlen(domain), &sid);
     if (error) {
-        pr_info("security_secctx_to_secid %s -> sid: %d, error: %d\n", domain, sid, error);
+        pr_info("security_secctx_to_secid %s -> sid: %d, error: %d\n", domain,
+                sid, error);
     }
     if (!error) {
         tsec->sid = sid;
@@ -89,34 +72,20 @@ void setup_ksu_cred(void)
 void setenforce(bool enforce)
 {
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
-    selinux_enforcing = enforce;
-#else
     selinux_state.enforcing = enforce;
-#endif
 #endif
 }
 
 bool getenforce(void)
 {
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
-    if (!selinux_is_enabled()) {
-        return false;
-    }
-#else
     if (selinux_state.disabled) {
         return false;
     }
 #endif
-#endif
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
-    return selinux_enforcing;
-#else
     return selinux_state.enforcing;
-#endif
 #else
     return true;
 #endif
@@ -150,7 +119,8 @@ void cache_sid(void)
 {
     int err;
 
-    err = security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT), &cached_su_sid);
+    err = security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT),
+                                   &cached_su_sid);
     if (err) {
         pr_warn("Failed to cache kernel su domain SID: %d\n", err);
         cached_su_sid = 0;
@@ -158,7 +128,8 @@ void cache_sid(void)
         pr_info("Cached su SID: %u\n", cached_su_sid);
     }
 
-    err = security_secctx_to_secid(ZYGOTE_CONTEXT, strlen(ZYGOTE_CONTEXT), &cached_zygote_sid);
+    err = security_secctx_to_secid(ZYGOTE_CONTEXT, strlen(ZYGOTE_CONTEXT),
+                                   &cached_zygote_sid);
     if (err) {
         pr_warn("Failed to cache zygote SID: %d\n", err);
         cached_zygote_sid = 0;
@@ -166,7 +137,8 @@ void cache_sid(void)
         pr_info("Cached zygote SID: %u\n", cached_zygote_sid);
     }
 
-    err = security_secctx_to_secid(INIT_CONTEXT, strlen(INIT_CONTEXT), &cached_init_sid);
+    err = security_secctx_to_secid(INIT_CONTEXT, strlen(INIT_CONTEXT),
+                                   &cached_init_sid);
     if (err) {
         pr_warn("Failed to cache init SID: %d\n", err);
         cached_init_sid = 0;
@@ -174,7 +146,8 @@ void cache_sid(void)
         pr_info("Cached init SID: %u\n", cached_init_sid);
     }
 
-    err = security_secctx_to_secid(KSU_FILE_CONTEXT, strlen(KSU_FILE_CONTEXT), &ksu_file_sid);
+    err = security_secctx_to_secid(KSU_FILE_CONTEXT, strlen(KSU_FILE_CONTEXT),
+                                   &ksu_file_sid);
     if (err) {
         pr_warn("Failed to cache ksu_file SID: %d\n", err);
         ksu_file_sid = 0;
@@ -187,7 +160,8 @@ void cache_sid(void)
  * Fast path: compare task's SID directly against cached value.
  * Falls back to string comparison if cache is not initialized.
  */
-static bool is_sid_match(const struct cred *cred, u32 cached_sid, const char *fallback_context)
+static bool is_sid_match(const struct cred *cred, u32 cached_sid,
+                         const char *fallback_context)
 {
     if (!cred) {
         return false;

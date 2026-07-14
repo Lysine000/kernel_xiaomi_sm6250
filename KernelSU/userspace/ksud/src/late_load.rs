@@ -51,6 +51,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         )?;
         info!("Detected KMI: {kmi}");
 
+
         // 3. Get kernelsu.ko from embedded assets
         let ko_name = format!("{kmi}_kernelsu.ko");
         let ko_data = assets::get_asset_data(&ko_name)
@@ -130,15 +131,13 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     init_event::run_stage("boot-completed", false);
 
     // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
-    info!("Restarting KernelSU Manager {package_name}...");
-    let _ = Command::new("am")
-        .args(["force-stop", package_name])
-        .status();
+    info!("Restarting KernelSU Next Manager {package_name}...");
+    let _ = Command::new("am").args(["force-stop", package_name]).status();
     let _ = Command::new("am")
         .args([
             "start",
             "-n",
-            &format!("{package_name}/me.weishu.kernelsu.ui.MainActivity"),
+            &format!("{package_name}/com.rifsxd.ksunext.ui.MainActivity"),
         ])
         .status();
 

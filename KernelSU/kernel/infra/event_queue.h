@@ -10,27 +10,6 @@
 #include <linux/types.h>
 #include <linux/wait.h>
 
-#ifndef __poll_t
-typedef unsigned int __poll_t;
-#endif
-
-#ifndef EPOLLIN
-#define EPOLLIN POLLIN
-#endif
-#ifndef EPOLLRDNORM
-#define EPOLLRDNORM POLLRDNORM
-#endif
-#ifndef EPOLLHUP
-#define EPOLLHUP POLLHUP
-#endif
-#ifndef EPOLLOUT
-#define EPOLLOUT POLLOUT
-#endif
-#ifndef EPOLLWRNORM
-#define EPOLLWRNORM POLLWRNORM
-#endif
-
-
 #define KSU_EVENT_RECORD_FLAG_INTERNAL (1U << 0)
 #define KSU_EVENT_QUEUE_TYPE_DROPPED ((__u16)0xFFFF)
 

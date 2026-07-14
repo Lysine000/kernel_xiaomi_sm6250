@@ -28,7 +28,6 @@
 #include "selinux/selinux.h"
 #include "hook/syscall_hook.h"
 #include "hook/syscall_event_bridge.h"
-#include "util.h"
 
 // clang-format off
 static const char KERNEL_SU_RC[] =

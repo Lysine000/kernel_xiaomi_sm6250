@@ -44,17 +44,17 @@ const INSTALL_MODULE_SCRIPT: &str = concatcp!(
 );
 
 /// Validate module_id format and security
-/// Module ID must match: ^[a-zA-Z][a-zA-Z0-9._-]+$
-/// - Must start with a letter (a-zA-Z)
+/// Module ID must match: ^[a-zA-Z0-9][a-zA-Z0-9._-]+$
+/// - Must start with a letter or number (a-zA-Z0-9)
 /// - Followed by one or more alphanumeric, dot, underscore, or hyphen characters
 /// - Minimum length: 2 characters
 pub fn validate_module_id(module_id: &str) -> Result<()> {
-    let re = Regex::new(r"^[a-zA-Z][a-zA-Z0-9._-]+$")?;
+    let re = Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9._-]+$")?;
     if re.is_match(module_id) {
         Ok(())
     } else {
         Err(anyhow!(
-            "Invalid module ID: '{module_id}'. Must match /^[a-zA-Z][a-zA-Z0-9._-]+$/"
+            "Invalid module ID: '{module_id}'. Must match /^[a-zA-Z0-9][a-zA-Z0-9._-]+$/"
         ))
     }
 }
@@ -67,6 +67,8 @@ pub fn get_common_script_envs(module_id: Option<&str>) -> Vec<(&'static str, Str
         ("KSU_KERNEL_VER_CODE", ksucalls::get_version().to_string()),
         ("KSU_VER_CODE", defs::VERSION_CODE.to_string()),
         ("KSU_VER", defs::VERSION_NAME.to_string()),
+        ("KSU_UAPI_VER", ksucalls::uapi_version().to_string()),
+        ("KSU_RUNTIME_MODE", ksucalls::runtime_mode().to_string()),
         (
             "PATH",
             format!(
@@ -168,10 +170,10 @@ pub fn load_sepolicy_rule() -> Result<()> {
         if !rule_file.exists() {
             return Ok(());
         }
-        info!("load policy: {}", &rule_file.display());
+        info!("load policy: {}", rule_file.display());
 
         if sepolicy::apply_file(&rule_file).is_err() {
-            warn!("Failed to load sepolicy.rule for {}", &rule_file.display());
+            warn!("Failed to load sepolicy.rule for {}", rule_file.display());
         }
         Ok(())
     })?;
@@ -521,9 +523,6 @@ pub fn handle_updated_modules() -> Result<()> {
 fn install_module_to_system(zip: &str) -> Result<()> {
     ensure_boot_completed()?;
 
-    // print banner
-    println!(include_str!("banner"));
-
     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
 
     // first check if working dir is usable
@@ -665,6 +664,8 @@ fn install_module_to_system(zip: &str) -> Result<()> {
 }
 
 pub fn install_module(zip: &str) -> Result<()> {
+    ksucalls::ensure_uapi_version_matched()?;
+
     let result = install_module_to_system(zip);
     if let Err(ref e) = result {
         println!("- Error: {e}");
@@ -674,7 +675,7 @@ pub fn install_module(zip: &str) -> Result<()> {
     result
 }
 
-pub fn undo_uninstall_module(id: &str) -> Result<()> {
+pub fn restore_module(id: &str) -> Result<()> {
     validate_module_id(id)?;
 
     let module_path = Path::new(defs::MODULE_DIR).join(id);
@@ -716,6 +717,7 @@ pub fn uninstall_module(id: &str) -> Result<()> {
 
 pub fn run_action(id: &str) -> Result<()> {
     validate_module_id(id)?;
+    ksucalls::ensure_uapi_version_matched()?;
 
     let action_script_path = format!("/data/adb/modules/{id}/action.sh");
     exec_script(&action_script_path, true)
@@ -811,7 +813,6 @@ pub fn read_module_prop(module_path: &Path) -> Result<HashMap<String, String>> {
     Ok(prop_map)
 }
 
-/// Resolve a module icon path to an absolute on-disk path
 fn resolve_module_icon_path(
     module_prop_map: &mut HashMap<String, String>,
     key: &str,
@@ -954,6 +955,16 @@ fn list_module(path: &str) -> Vec<HashMap<String, String>> {
     }
 
     modules
+}
+
+pub fn is_metamodule_installed() -> Result<()> {
+
+    if metamodule::has_metamodule() {
+        println!("Installed");
+        return Ok(());
+    } else {
+        Err(anyhow!("Unsupported"))
+    }
 }
 
 pub fn list_modules() -> Result<()> {

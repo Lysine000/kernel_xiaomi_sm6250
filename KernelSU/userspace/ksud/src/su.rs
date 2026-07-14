@@ -27,6 +27,9 @@ pub fn grant_root(global_mnt: bool) -> Result<()> {
     let mut command = Command::new("sh");
     let command = unsafe {
         command.pre_exec(move || {
+            // WebUI shells are launched from the manager app process, so make sure
+            // children escape its app cgroups just like module actions do.
+            utils::switch_cgroups();
             if global_mnt {
                 let _ = utils::switch_mnt_ns(1);
             }
@@ -160,7 +163,7 @@ pub fn root_shell() -> Result<()> {
     opts.optflag(
         "",
         "ksu-no-new-privs",
-        "Prevent this process (and its children) from privilege re-escalation via KernelSU",
+        "Prevent this process (and its children) from privilege re-escalation via KernelSU Next",
     );
 
     // Replace -cn with -z, -mm with -M for supporting getopt_long

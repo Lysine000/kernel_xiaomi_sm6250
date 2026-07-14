@@ -29,8 +29,6 @@ mod ksucalls;
 #[cfg(target_os = "android")]
 mod late_load;
 #[cfg(target_os = "android")]
-mod magica;
-#[cfg(target_os = "android")]
 mod metamodule;
 #[cfg(target_os = "android")]
 mod module;
@@ -46,6 +44,8 @@ mod restorecon;
 mod sepolicy;
 #[cfg(target_os = "android")]
 mod su;
+#[cfg(target_os = "android")]
+mod susfsd;
 #[cfg(target_os = "android")]
 mod sulog;
 #[cfg(target_os = "android")]

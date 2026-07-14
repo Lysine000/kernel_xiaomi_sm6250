@@ -2,17 +2,14 @@
 #include <linux/compat.h>
 #include <linux/cred.h>
 #include <linux/gfp.h>
-#include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 #include <linux/minmax.h>
-#else
-#include <linux/kernel.h>
-#endif
 #include <linux/overflow.h>
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
+
+#include <linux/version.h>
 #if defined(__x86_64__) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
 #include <linux/mm.h>
 #endif
@@ -21,7 +18,6 @@
 #include "infra/event_queue.h"
 #include "klog.h" // IWYU pragma: keep
 #include "sulog/event.h"
-#include "util.h"
 
 #define KSU_SULOG_MAX_QUEUED 256U
 #define KSU_SULOG_MAX_PAYLOAD_LEN 2048U
@@ -42,6 +38,82 @@ struct user_arg_ptr {
 };
 
 static struct ksu_event_queue sulog_queue;
+
+// Compat bridge for ksu_toolkit (SULog)
+struct compat_sulog_entry {
+    uint32_t s_time;
+    uint32_t data;
+} __attribute__((packed));
+
+#define COMPAT_SULOG_MAX 250
+static struct compat_sulog_entry compat_sulog_buf[COMPAT_SULOG_MAX];
+static uint8_t compat_sulog_idx = 0;
+static DEFINE_SPINLOCK(compat_sulog_lock);
+
+void ksu_compat_sulog(uint8_t sym)
+{
+    struct compat_sulog_entry entry = {0};
+    unsigned int uid = current_uid().val;
+    struct timespec64 ts;
+
+    ktime_get_boottime_ts64(&ts);
+    entry.s_time = (uint32_t)ts.tv_sec;
+    entry.data = (uint32_t)uid;
+    memcpy((void *)&entry.data + 3, &sym, 1);
+
+    spin_lock(&compat_sulog_lock);
+    compat_sulog_buf[compat_sulog_idx] = entry;
+    compat_sulog_idx = (compat_sulog_idx + 1) % COMPAT_SULOG_MAX;
+    spin_unlock(&compat_sulog_lock);
+}
+
+struct sulog_entry_rcv_ptr {
+    uint64_t index_ptr;
+    uint64_t buf_ptr;
+    uint64_t uptime_ptr;
+};
+
+int ksu_sulog_handle_compat_dump(void __user *uptr)
+{
+    struct sulog_entry_rcv_ptr sbuf = {0};
+    uint32_t uptime;
+    uint8_t local_idx;
+    struct timespec64 ts;
+    struct compat_sulog_entry *local_buf;
+
+    if (copy_from_user(&sbuf, uptr, sizeof(sbuf)))
+        return 1;
+
+    if (!sbuf.index_ptr || !sbuf.buf_ptr || !sbuf.uptime_ptr)
+        return 1;
+
+    ktime_get_boottime_ts64(&ts);
+    uptime = (uint32_t)ts.tv_sec;
+    if (copy_to_user((void __user *)(uintptr_t)sbuf.uptime_ptr, &uptime, sizeof(uptime)))
+        return 1;
+
+    local_buf = kmalloc(sizeof(compat_sulog_buf), GFP_ATOMIC);
+    if (!local_buf)
+        return 1;
+
+    spin_lock(&compat_sulog_lock);
+    local_idx = compat_sulog_idx;
+    memcpy(local_buf, compat_sulog_buf, sizeof(compat_sulog_buf));
+    spin_unlock(&compat_sulog_lock);
+
+    if (copy_to_user((void __user *)(uintptr_t)sbuf.index_ptr, &local_idx, sizeof(local_idx))) {
+        kfree(local_buf);
+        return 1;
+    }
+
+    if (copy_to_user((void __user *)(uintptr_t)sbuf.buf_ptr, local_buf, sizeof(compat_sulog_buf))) {
+        kfree(local_buf);
+        return 1;
+    }
+
+    kfree(local_buf);
+    return 0;
+}
 
 struct ksu_sulog_pending_event {
     __u16 event_type;

@@ -3,18 +3,15 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use android_logger::Config;
-use log::{LevelFilter, error, info};
+use log::{LevelFilter, info};
 
 use crate::boot_patch::{BootPatchArgs, BootRestoreArgs};
 use crate::module::regenerate_preinit_rc;
-use crate::{
-    apk_sign, assets, debug, defs, init_event, ksu_uapi, ksucalls, module, module_config, sulog,
-    utils,
-};
+use crate::{apk_sign, assets, debug, defs, ksu_uapi, init_event, ksucalls, module, module_config, sulog, susfsd, utils};
 
-/// KernelSU userspace cli
+/// KernelSU Next userspace cli
 #[derive(Parser, Debug)]
-#[command(author, version = defs::VERSION_NAME, about, long_about = None)]
+#[command(author, version = defs::FULL_VERSION, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
     command: Commands,
@@ -22,7 +19,7 @@ struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
-    /// Manage KernelSU modules
+    /// Manage KernelSU Next modules
     Module {
         #[command(subcommand)]
         command: Module,
@@ -43,29 +40,18 @@ enum Commands {
 
     /// Load kernelsu.ko and execute late-load stage scripts
     LateLoad {
-        /// Use adb root to execute late-load for jailbreaking by Magica
-        #[arg(long, default_missing_value = "5555", num_args = 0..=1)]
-        magica: Option<u16>,
-
         /// Pass allow_shell=1 when loading kernelsu.ko
         #[arg(long)]
         allow_shell: bool,
-
-        /// Restore adb properties after magica late-load
-        #[arg(long)]
-        post_magica: bool,
 
         /// Specify kernel KMI version instead of auto-detection
         #[arg(long)]
         kmi: Option<String>,
 
         /// manager package name
-        #[arg(long, default_value_t = String::from("me.weishu.kernelsu"))]
+        #[arg(long, default_value_t = String::from("com.rifsxd.ksunext"))]
         package_name: String,
     },
-
-    /// Emulate system reboot
-    SoftReboot,
 
     /// Load a kernel module with kallsyms access
     Insmod {
@@ -76,18 +62,18 @@ enum Commands {
         params: Vec<String>,
     },
 
-    /// Install KernelSU userspace component to system
+    /// Install KernelSU Next userspace component to system
     Install {
         #[arg(long, default_value = None)]
         libadbroot: Option<PathBuf>,
     },
 
-    /// Unload KernelSU kernel module (LKM Only)
+    /// Unload KernelSU Next kernel module (LKM Only)
     Unload,
 
-    /// Uninstall KernelSU modules and itself(LKM Only)
+    /// Uninstall KernelSU Next modules and itself(LKM Only)
     Uninstall {
-        #[arg(long, default_value_t = String::from("me.weishu.kernelsu"))]
+        #[arg(long, default_value_t = String::from("com.rifsxd.ksunext"))]
         package_name: String,
     },
 
@@ -109,7 +95,7 @@ enum Commands {
         command: Feature,
     },
 
-    /// Patch boot or init_boot images to apply KernelSU
+    /// Patch boot or init_boot images to apply KernelSU Next
     BootPatch(BootPatchArgs),
 
     /// Restore boot or init_boot images patched by KernelSU
@@ -144,6 +130,16 @@ enum Commands {
         #[command(subcommand)]
         command: Initrc,
     },
+
+    /// Emulate soft reboot (ksud; zygote)
+    #[command(name = "soft-reboot")]
+    SoftReboot,
+
+    /// Susfs management
+    Susfs {
+        #[command(subcommand)]
+        command: SusfsAction,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -176,7 +172,7 @@ enum Debug {
     /// Set the manager app, kernel CONFIG_KSU_DEBUG should be enabled.
     SetManager {
         /// manager package name
-        #[arg(default_value_t = String::from("me.weishu.kernelsu"))]
+        #[arg(default_value_t = String::from("com.rifsxd.ksunext"))]
         apk: String,
     },
 
@@ -277,7 +273,7 @@ enum Module {
     },
 
     /// Undo module uninstall mark <id>
-    UndoUninstall {
+    Restore {
         /// module id
         id: String,
     },
@@ -305,6 +301,9 @@ enum Module {
         // module id
         id: String,
     },
+
+    /// check metemodule status
+    Metamodule,
 
     /// list all modules
     List,
@@ -472,6 +471,18 @@ enum UmountOp {
 }
 
 #[derive(clap::Subcommand, Debug)]
+enum SusfsAction {
+    /// Show if susfs is supported
+    Support,
+    /// Show susfs version
+    Version,
+    /// Show susfs variant
+    Variant,
+    /// Show enabled features
+    Features,
+}
+
+#[derive(clap::Subcommand, Debug)]
 enum Initrc {
     /// Regenerate preinit rc file
     Refresh,
@@ -481,7 +492,7 @@ pub fn run() -> Result<()> {
     android_logger::init_once(
         Config::default()
             .with_max_level(crate::debug_select!(LevelFilter::Trace, LevelFilter::Info))
-            .with_tag("KernelSU"),
+            .with_tag("KernelSU Next"),
     );
 
     // the kernel executes su with argv[0] = "su" and replace it with us
@@ -506,19 +517,16 @@ pub fn run() -> Result<()> {
             Ok(())
         }
 
-        Commands::SoftReboot => init_event::soft_reboot(),
-
-        Commands::Insmod { module, params } => debug::insmod(&module, &params),
-
         Commands::Module { command } => {
             utils::switch_mnt_ns(1)?;
             match command {
                 Module::Install { zip } => module::install_module(&zip),
-                Module::UndoUninstall { id } => module::undo_uninstall_module(&id),
+                Module::Restore { id } => module::restore_module(&id),
                 Module::Uninstall { id } => module::uninstall_module(&id),
                 Module::Enable { id } => module::enable_module(&id),
                 Module::Disable { id } => module::disable_module(&id),
                 Module::Action { id } => module::run_action(&id),
+                Module::Metamodule => module::is_metamodule_installed(),
                 Module::List => module::list_modules(),
                 Module::Config { internal, command } => {
                     let module_id = match internal {
@@ -620,31 +628,10 @@ pub fn run() -> Result<()> {
             Sepolicy::Apply { file } => crate::sepolicy::apply_file(file),
             Sepolicy::Check { sepolicy } => crate::sepolicy::check_rule(&sepolicy),
         },
-        Commands::LateLoad {
-            magica,
-            allow_shell,
-            post_magica,
-            kmi,
-            package_name,
-        } => {
-            if let Some(port) = magica {
-                return crate::magica::run(port, &package_name, allow_shell).map_err(|e| {
-                    error!("Error running magica: {e}");
-                    e
-                });
-            }
-            let result = crate::late_load::run(&package_name, kmi, allow_shell);
-            if post_magica {
-                info!("Restoring adb properties (post-magica cleanup)...");
-                if let Err(e) = crate::magica::disable_adb_root() {
-                    error!("disable adb root failed: {e}");
-                }
-            }
-            result
-        }
+        Commands::LateLoad { package_name, kmi, allow_shell } => crate::late_load::run(&package_name, kmi, allow_shell),
         Commands::Services => {
             if ksucalls::get_version() <= 0 {
-                info!("KernelSU not available, exiting services");
+                info!("KernelSU Next not available, exiting services");
                 std::process::exit(0);
             }
             init_event::on_services();
@@ -710,14 +697,9 @@ pub fn run() -> Result<()> {
                 println!("flags: 0x{:x}", info.flags);
                 println!("uapi_version: {}", info.uapi_version);
                 println!("features: 0x{:x}", info.features);
-                println!(
-                    "lkm: {}",
-                    (info.flags & ksu_uapi::KSU_GET_INFO_FLAG_LKM) != 0
-                );
-                println!(
-                    "late_load: {}",
-                    (info.flags & ksu_uapi::KSU_GET_INFO_FLAG_LATE_LOAD) != 0
-                );
+                println!("lkm: {}", ksucalls::is_lkm());
+                println!("late_load: {}", ksucalls::is_late_load());
+                println!("runtime_mode: {}", ksucalls::runtime_mode());
                 println!(
                     "pr_build: {}",
                     (info.flags & ksu_uapi::KSU_GET_INFO_FLAG_PR_BUILD) != 0
@@ -774,6 +756,16 @@ pub fn run() -> Result<()> {
             full_args.extend(args);
             crate::resetprop::resetprop_main(&full_args)
         }
+        Commands::SoftReboot => init_event::soft_reboot(),
+
+        Commands::Insmod { module, params } => debug::insmod(&module, &params),
+
+        Commands::Susfs { command } => match command {
+            SusfsAction::Support => susfsd::show_features(true),
+            SusfsAction::Version => susfsd::show_version(),
+            SusfsAction::Variant => susfsd::show_variant(),
+            SusfsAction::Features => susfsd::show_features(false),
+        },
 
         Commands::Kernel { command } => match command {
             Kernel::NukeExt4Sysfs { mnt } => ksucalls::nuke_ext4_sysfs(&mnt),

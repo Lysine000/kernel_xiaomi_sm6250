@@ -1,15 +1,15 @@
 [package]
 name = "ksud"
 version = "0.1.0"
-edition.workspace = true
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow.workspace = true
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
-log.workspace = true
+log = "0.4"
 env_logger = { version = "0.11", default-features = false }
 rust-embed = { version = "8", features = [
     "debug-embed",
@@ -38,7 +38,7 @@ zip = { version = "8",  features = [
     "lzma",
     "xz",
 ], default-features = false }
-zip-extensions = { version = "0.14", features = [
+zip-extensions = { version = "0.13", features = [
     "deflate",
     "lzma",
     "xz",
@@ -55,8 +55,25 @@ nom = "8"
 derive-new = "0.7"
 getopts = "0.2"
 ksuinit = { path = "../ksuinit" }
-adb_client = { git = "https://github.com/Kernel-SU/adb_client" }
-prop-rs-android = { git = "https://github.com/Kernel-SU/ksu_props" }
+prop-rs-android = { git = "https://github.com/Kernel-SU/ksu_props", rev = "6f5723105d8d4cacad31d83d343defbf032c7b33" }
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
 
 [build-dependencies]
 bindgen = "0.72"
+
+[package.metadata.cross.target.aarch64-linux-android]
+pre-build = ["apt-get update && apt-get install -y libclang-dev"]
+
+[package.metadata.cross.target.x86_64-linux-android]
+pre-build = ["apt-get update && apt-get install -y libclang-dev"]
+
+[package.metadata.cross.env]
+passthrough = [
+    "BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android",
+    "BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android",
+]
