@@ -3,7 +3,16 @@
 
 #include <linux/types.h>
 
+#include <linux/version.h>
 #include "ss/policydb.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
+struct selinux_policy {
+	struct sidtab *sidtab;
+	struct policydb policydb;
+	u32 latest_granting;
+};
+#endif
 
 struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
 
