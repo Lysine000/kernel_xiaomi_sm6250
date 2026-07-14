@@ -13,6 +13,10 @@
 #include <linux/syscalls.h>
 #include <linux/task_work.h>
 #include <linux/version.h>
+#undef LINUX_VERSION_CODE
+#define LINUX_VERSION_CODE 265845
+#undef KERNEL_VERSION
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 #include <uapi/linux/mount.h>
 #endif
@@ -24,8 +28,26 @@
 #include "infra/su_mount_ns.h"
 #include "util.h"
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
+#include <linux/uaccess.h>
+extern long do_mount(const char *dev_name, const char __user *dir_name,
+		const char *type_page, unsigned long flags, void *data_page);
+extern asmlinkage long sys_unshare(unsigned long unshare_flags);
+#define ksys_unshare sys_unshare
+
+static int path_mount(const char *dev_name, struct path *path,
+		const char *type_page, unsigned long flags, void *data_page)
+{
+    mm_segment_t old_fs = get_fs();
+    set_fs(KERNEL_DS);
+    int ret = do_mount(NULL, "/", NULL, flags, NULL);
+    set_fs(old_fs);
+    return ret;
+}
+#else
 extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
                       void *data_page);
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
 extern asmlinkage long sys_setns(int fd, int nstype);
