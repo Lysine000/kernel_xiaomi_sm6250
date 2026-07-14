@@ -5,6 +5,10 @@
 #include <linux/version.h>
 #include <linux/syscalls.h>
 
+#ifndef TWA_RESUME
+#define TWA_RESUME true
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 #define ksu_close_fd close_fd
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
