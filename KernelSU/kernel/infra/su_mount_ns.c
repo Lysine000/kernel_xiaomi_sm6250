@@ -27,6 +27,13 @@
 extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
                       void *data_page);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+extern asmlinkage long sys_setns(int fd, int nstype);
+static long ksu_sys_setns(int fd, int flags)
+{
+    return sys_setns(fd, flags);
+}
+#else
 #if defined(__aarch64__)
 extern long __arm64_sys_setns(const struct pt_regs *regs);
 #elif defined(__x86_64__)
@@ -49,6 +56,7 @@ static long ksu_sys_setns(int fd, int flags)
 #error "Unsupported arch"
 #endif
 }
+#endif
 
 // global mode , need CAP_SYS_ADMIN and CAP_SYS_CHROOT to perform setns
 static void ksu_mnt_ns_global(void)
