@@ -41,6 +41,8 @@ static DEFINE_MUTEX(ksu_status_lock);
     security_context_to_sid(scontext, scontext_len, out_sid, gfp)
 #define security_context_str_to_sid(state, scontext, out_sid, gfp) \
     security_context_str_to_sid(scontext, out_sid, gfp)
+#define security_sid_to_context(state, sid, scontext, scontext_len) \
+    security_sid_to_context(sid, scontext, scontext_len)
 #define security_compute_av_user(state, ssid, tsid, tclass, avd) \
     security_compute_av_user(ssid, tsid, tclass, avd)
 #else
