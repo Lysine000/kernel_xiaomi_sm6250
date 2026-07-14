@@ -18,6 +18,17 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2
 
+      - name: Replace official KernelSU with KernelSU-Next
+        run: |
+          rm -rf KernelSU
+          rm -f drivers/kernelsu
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          echo "=== Verify symlink ==="
+          ls -la drivers/kernelsu
+          echo "=== Verify Kconfig still references it ==="
+          grep -n "kernelsu" drivers/Kconfig
+          grep -n "kernelsu" drivers/Makefile
+
       - name: Get Proton Clang
         run: |
           git clone -q https://github.com/kdrag0n/proton-clang --depth=1 --single-branch "$HOME/proton"
