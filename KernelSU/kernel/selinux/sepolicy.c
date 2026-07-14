@@ -159,6 +159,34 @@ static bool remove_avtab_node(struct policydb *db, struct avtab_node *node)
     if (ret < 0)
         return false;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+    for (i = 0; i < db->te_avtab.nslot; i++) {
+        prev = NULL;
+        for (n = flex_array_get_ptr(db->te_avtab.htable, i); n; prev = n, n = n->next) {
+            if (n != node)
+                continue;
+
+            if (prev)
+                prev->next = n->next;
+            else
+                flex_array_put_ptr(db->te_avtab.htable, i, n->next, GFP_KERNEL);
+
+            if (db->te_avtab.nel > 0)
+                db->te_avtab.nel--;
+
+            if ((n->key.specified & AVTAB_XPERMS) && n->datum.u.xperms) {
+                shrink_size += sizeof(u8) + sizeof(u8) + sizeof(u32) * ARRAY_SIZE(n->datum.u.xperms->perms.p);
+            }
+            n->next = NULL;
+            flex_array_put_ptr(removed.htable, 0, n, GFP_KERNEL);
+            removed.nel = 1;
+            avtab_destroy(&removed);
+            if (db->len >= shrink_size)
+                db->len -= shrink_size;
+            return true;
+        }
+    }
+#else
     for (i = 0; i < db->te_avtab.nslot; i++) {
         prev = NULL;
         for (n = db->te_avtab.htable[i]; n; prev = n, n = n->next) {
@@ -185,6 +213,7 @@ static bool remove_avtab_node(struct policydb *db, struct avtab_node *node)
             return true;
         }
     }
+#endif
 
     avtab_destroy(&removed);
     return false;
@@ -845,7 +874,9 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
     db->sym_val_to_name[SYM_TYPES][value - 1] = key;
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
     int i;
+#endif
     for (i = 0; i < db->p_roles.nprim; ++i) {
         ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
     }
@@ -880,7 +911,11 @@ static bool set_type_state(struct policydb *db, const char *type_name, bool perm
 
 static void add_typeattribute_raw(struct policydb *db, struct type_datum *type, struct type_datum *attr)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+    struct ebitmap *sattr = flex_array_get(db->type_attr_map_array, type->value - 1);
+#else
     struct ebitmap *sattr = &db->type_attr_map_array[type->value - 1];
+#endif
     ebitmap_set_bit(sattr, attr->value - 1, 1);
 
     struct hashtab_node *node;
@@ -1052,6 +1087,7 @@ struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
         goto out_free_data;
     }
 
+#ifdef POLICYDB_CONFIG_ANDROID_NETLINK_ROUTE
     // https://android-review.googlesource.com/c/kernel/common/+/3009995/11/security/selinux/ss/policydb.c
     // fixup config
     // 4*2+8+4
@@ -1069,6 +1105,7 @@ struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
         }
         pr_info("new config: %u\n", *config_ptr);
     }
+#endif
 
     new_pol = kmemdup(old_pol, sizeof(*old_pol), GFP_KERNEL);
     if (!new_pol) {
