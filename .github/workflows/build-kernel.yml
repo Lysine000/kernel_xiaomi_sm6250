@@ -17,7 +17,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Install KernelSU-Next (legacy) with manual hooks
         run: |
@@ -34,10 +33,10 @@ jobs:
           echo "=== Ensure ksu_handle_execveat is declared before use in fs/exec.c ==="
           if ! grep -q "extern int ksu_handle_execveat" fs/exec.c; then
             sed -i '/^int do_execve(struct filename \*filename,/i\
-            #ifdef CONFIG_KSU\
-            extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\
-            #endif\
-            ' fs/exec.c
+#ifdef CONFIG_KSU\
+extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\
+#endif\
+' fs/exec.c
           fi
           echo "=== Confirm declaration now present ==="
           grep -n -B2 -A1 "extern int ksu_handle_execveat" fs/exec.c
@@ -79,8 +78,6 @@ jobs:
           make cust_defconfig O=out \
             ARCH=arm64 \
             CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             NM=llvm-nm \
@@ -92,8 +89,6 @@ jobs:
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             NM=llvm-nm \
