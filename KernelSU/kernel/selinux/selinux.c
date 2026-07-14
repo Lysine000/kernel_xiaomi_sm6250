@@ -3,6 +3,10 @@
 #include "linux/sched.h"
 #include "objsec.h"
 #include "linux/version.h"
+#undef LINUX_VERSION_CODE
+#define LINUX_VERSION_CODE 265845
+#undef KERNEL_VERSION
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 #include <linux/security.h>
 #include <linux/selinux.h>
 

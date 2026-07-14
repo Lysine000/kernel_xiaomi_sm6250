@@ -8,6 +8,10 @@
 #include <linux/printk.h>
 #include <linux/slab.h>
 #include <linux/version.h>
+#undef LINUX_VERSION_CODE
+#define LINUX_VERSION_CODE 265845
+#undef KERNEL_VERSION
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 #include <linux/vmalloc.h>
 
 #include "sepolicy.h"
