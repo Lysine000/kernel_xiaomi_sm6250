@@ -1,8 +1,28 @@
-- name: Replace official KernelSU with KernelSU-Next (legacy/non-GKI mode)
+name: Build Miatoll Kernel (Corvus source)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
+            build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2
+
+      - name: Install official KernelSU v0.9.5 (last non-GKI release)
         run: |
           rm -rf KernelSU KernelSU-Next
           rm -f drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
           echo "=== Verify symlink ==="
           ls -la drivers/kernelsu
           echo "=== Verify Kconfig/Makefile still reference it ==="
@@ -11,7 +31,79 @@
           echo "=== Confirm defconfig has required options ==="
           DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
           grep -n "CONFIG_KSU\|CONFIG_KPROBES\|CONFIG_HAVE_KPROBES\|CONFIG_KPROBE_EVENTS" "$DEFCONFIG"
-          echo "=== Patch missing strscpy_pad compat calls ==="
-          grep -rl 'strscpy_pad(' KernelSU-Next/kernel 2>/dev/null | xargs -r sed -i 's/\bstrscpy_pad(/__strscpy_pad(/g'
-          echo "=== Verify patch applied ==="
-          grep -rn '__strscpy_pad(' KernelSU-Next/kernel | head -5
+
+      - name: Get Proton Clang
+        run: |
+          git clone -q https://github.com/kdrag0n/proton-clang --depth=1 --single-branch "$HOME/proton"
+
+      - name: Diagnostic compiler check
+        run: |
+          export PATH="$HOME/proton/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          echo "=== ELFEDIT PATH ==="
+          which aarch64-linux-gnu-elfedit || echo "Not found"
+          echo "=== CLANG VERSION ==="
+          clang --version
+          echo "=== SIMPLE TEST COMPILE ==="
+          clang -Werror --target=aarch64-linux-gnu -no-integrated-as -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
+          echo "=== DETAILED COMPILE TEST ==="
+          GCC_TOOLCHAIN_DIR=$(dirname $(which aarch64-linux-gnu-elfedit))
+          CLANG_FLAGS="--target=aarch64-linux-gnu --prefix=$GCC_TOOLCHAIN_DIR/aarch64-linux-gnu- --gcc-toolchain=$(realpath $GCC_TOOLCHAIN_DIR/..) -no-integrated-as"
+          clang -Werror $CLANG_FLAGS -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
+          echo "=== FIXED COMPILE TEST ==="
+          clang -Werror --target=aarch64-linux-gnu --prefix=/usr/bin/aarch64-linux-gnu- --gcc-toolchain=/usr -no-integrated-as -fstack-protector-strong -c -o /dev/null -x c /dev/null 2>&1 || true
+
+      - name: Build kernel
+        run: |
+          set -o pipefail
+          export PATH="$HOME/proton/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          mkdir -p out
+          make cust_defconfig O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            GCC_TOOLCHAIN_DIR=/usr/bin/ \
+            GCC_TOOLCHAIN=/usr
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            GCC_TOOLCHAIN_DIR=/usr/bin/ \
+            GCC_TOOLCHAIN=/usr \
+            KCFLAGS="-Wno-error=strict-prototypes" 2>&1 | tee build.log
+
+      - name: Verify kernel outputs exist
+        run: |
+          ls -la out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Package with the repo's own AnyKernel3
+        run: |
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cd AnyKernel3
+          zip -r9 ../miatoll-corvus-kernel-$(date +%Y%m%d-%H%M).zip * -x .git README.md
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: flashable-kernel
+          path: "*.zip"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
