@@ -35,7 +35,9 @@ jobs:
           grep -rl 'strscpy_pad(' KernelSU-Next/kernel 2>/dev/null | xargs -r sed -i 's/\bstrscpy_pad(/__strscpy_pad(/g'
           grep -rn '__strscpy_pad(' KernelSU-Next/kernel | head -5
           DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
+          sed -i '/CONFIG_KSU_WITH_KPROBES/d' "$DEFCONFIG"
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG"
+          echo "# CONFIG_KSU_WITH_KPROBES is not set" >> "$DEFCONFIG"
           grep -n "CONFIG_KSU" "$DEFCONFIG"
 
       - name: Get Proton Clang
