@@ -18,28 +18,6 @@ jobs:
           sudo apt-get install -y bc bison flex libssl-dev libncurses-dev \
             build-essential git zip curl gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python2
 
-      - name: Install KernelSU-Next (legacy) with manual hooks
-        run: |
-          rm -rf KernelSU KernelSU-Next
-          rm -f drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
-          ls -la drivers/kernelsu
-          curl -L https://github.com/rifsxd/android_kernel_xiaomi_sm6250/commit/7f5f639fb8d98e893e9bfc14d922e865b42c1806.patch -o ksu_manual_hook.patch
-          git apply --reject --whitespace=fix ksu_manual_hook.patch || true
-          find . -name "*.rej" -exec echo "REJECTED: {}" \; -exec cat {} \;
-          if ! grep -q "extern int ksu_handle_execveat" fs/exec.c; then
-            awk '/^int do_execve\(struct filename \*filename,/{print "#ifdef CONFIG_KSU"; print "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);"; print "#endif"} {print}' fs/exec.c > fs/exec.c.tmp
-            mv fs/exec.c.tmp fs/exec.c
-          fi
-          grep -n -B2 -A1 "extern int ksu_handle_execveat" fs/exec.c
-          grep -rl 'strscpy_pad(' KernelSU-Next/kernel 2>/dev/null | xargs -r sed -i 's/\bstrscpy_pad(/__strscpy_pad(/g'
-          grep -rn '__strscpy_pad(' KernelSU-Next/kernel | head -5
-          DEFCONFIG=$(find arch/arm64/configs -name cust_defconfig)
-          sed -i '/CONFIG_KSU_WITH_KPROBES/d' "$DEFCONFIG"
-          echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG"
-          echo "# CONFIG_KSU_WITH_KPROBES is not set" >> "$DEFCONFIG"
-          grep -n "CONFIG_KSU" "$DEFCONFIG"
-
       - name: Get Proton Clang
         run: |
           git clone -q https://github.com/kdrag0n/proton-clang --depth=1 --single-branch "$HOME/proton"
